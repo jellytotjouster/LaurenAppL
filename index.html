@@ -18,6 +18,8 @@
 <meta property="og:image" content="https://laurenappl.com/media/site/og.jpg">
 <meta name="twitter:card" content="summary_large_image">
 <style>:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style>
+<style id="lab-private">html:not(.lab-on) #tri-lab { display: none !important; } html:not(.lab-on) .hs-vchip small { display: none; }</style>
+<script id="lab-private-js">(function(){try{var q=location.search;if(/[?&]lab=0(&|$)/.test(q))localStorage.removeItem("appl-lab");else if(/[?&]lab(=1)?(&|$)/.test(q))localStorage.setItem("appl-lab","1");if(localStorage.getItem("appl-lab")==="1")document.documentElement.classList.add("lab-on");}catch(e){}})();</script>
 </head>
 <body>
 <script id="appl-api">
@@ -4381,13 +4383,13 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
   Object.assign(WORKS[0], { name: 'Smooth seas don\u2019t make good sailors', img: 'media/seas/listing-thumb.webp', full: 'media/seas/listing.webp', alt: 'Smooth seas don\u2019t make good sailors, a marker-ink drawing: checkerboard clouds in black, white, orange and pink, a long chain of purple beads curling down into layered blue and teal waves, a long green creature, and a dark green fish with three round red eyes.' });
   /* the first work's listing: an A4 original (price in pounds, a first guess: set it with price:), prints A5 to A3; year still to add */
   Object.assign(WORKS[0], { kept: true, price: 175, sold: false,       /* kept: prints only for now; to sell the original, delete kept */
-    prints: [['A5', '148 \u00d7 210 mm', 18], ['A4', '210 \u00d7 297 mm', 28], ['A3', '297 \u00d7 420 mm', 45]],
+    prints: [['A5', '148 \u00d7 210 mm', 18], ['A4', '210 \u00d7 297 mm', 22], ['A3', '297 \u00d7 420 mm', 30]],
     w: 1400, h: 982, ar: 1400 / 982, meta: 'Felt tip & fineliner \u00b7 A4',
     medium: 'Felt tip and fineliner', size: 'A4 (210 \u00d7 297 mm)',
     about: 'An A4 original in felt tip and fineliner.' });
   /* the second real work. price is in pounds */
   Object.assign(WORKS[1], { name: 'The Moment', kept: true, year: 'September 2026',   /* kept: the original is not for sale, only prints. To sell it, delete kept and add price: 250 */
-    edition: 'Limited edition of 25, first edition', prints: [['A5', '148 \u00d7 210 mm', 20], ['A4', '210 \u00d7 297 mm', 25], ['A3', '297 \u00d7 420 mm', 30]], w: 1400, h: 963, ar: 1400 / 963, meta: 'Felt tip, fineliner & coloured pencil \u00b7 A3',
+    edition: 'Limited edition of 25, first edition', prints: [['A5', '148 \u00d7 210 mm', 22], ['A4', '210 \u00d7 297 mm', 28], ['A3', '297 \u00d7 420 mm', 35]], w: 1400, h: 963, ar: 1400 / 963, meta: 'Felt tip, fineliner & coloured pencil \u00b7 A3',
     medium: 'Felt tip, fineliner and coloured pencil', size: 'A3 (297 \u00d7 420 mm)', support: 'Sketch paper, mounted on 200 gsm card',
     about: 'An A3 original in felt tip, fineliner and coloured pencil on sketch paper, reinforced with 200 gsm card. The original is not for sale; prints are a limited edition of 25, in three sizes.',
     img: 'media/moment/listing-thumb.webp', full: 'media/moment/listing.webp', alt: 'The Moment, a felt-tip, fineliner and coloured-pencil drawing: a large red eye with a black pupil and blue, teal and violet segments across the top, a black-and-white checkerboard ribbon rippling across the middle, a white beam of light running down the centre of the page, and around it patterned fields of pink, purple, blue, orange and green, jagged lightning bolts and small red drops.' });
@@ -4497,7 +4499,7 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
     { t: 'media/alive/close-right.webp', cap: "Close up: the dripping tangle and the lollipops", a: [0.6, 0.0, 1.0], b: [0.4, 1.0, 1.08] }
   ];
   Object.assign(WORKS[11], { name: 'Alive', kept: true, stageAr: '1 / 1',
-    edition: 'Limited edition of 25, first edition', prints: [['A5', '148 × 210 mm', 20], ['A4', '210 × 297 mm', 25], ['A3', '297 × 420 mm', 30]],
+    edition: 'Limited edition of 25, first edition', prints: [['A5', '148 × 210 mm', 22], ['A4', '210 × 297 mm', 28], ['A3', '297 × 420 mm', 35]],
     w: 1400, h: 990, ar: 1400 / 990, meta: 'Felt tip, fineliner & coloured pencil · A3',
     medium: 'Felt tip, fineliner and coloured pencil', size: 'A3 (297 × 420 mm)',
     about: 'An A3 original in felt tip, fineliner and coloured pencil. The original is not for sale; prints are a limited edition of 25, in three sizes.',
@@ -4795,7 +4797,7 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
         : t.pend.length ? `<p class="notice" role="status">Postage for ${esc(t.pend.join(' and '))} is confirmed by email, because it depends on the size. <a href="mailto:hello@laurenappl.com?subject=${encodeURIComponent('Postage for ' + t.pend.join(', '))}&body=${encodeURIComponent('Hello, I would like to buy: ' + cart.map(l => l.name + ' (' + l.option + ')').join(', ') + '. Could you confirm the postage?')}">Email hello@laurenappl.com</a> with your order and I’ll confirm it before you pay.</p>`
         : !live ? `<p class="notice" role="status">Checkout isn’t switched on yet, so nothing can be charged. You can keep your picks here, or <a href="#contact">write to me</a>.</p>` : '') +
       `<p class="muted small">Payment is taken by PayPal. You can cancel within 14 days of receiving your order: <a href="#returns">Returns and refunds</a>, <a href="#terms">Terms</a>.</p>` +
-      (ready ? `<p class="muted small">Order reference <strong data-plain>${ref}</strong>. After you pay, PayPal sends you a receipt and I get an email with your order and your postal address.</p>` +
+      (ready ? `<p class="muted small">Order reference <strong data-plain>${ref}</strong>. After you pay, I get an email with your order and your postal address.</p>` +
                `<p class="small"><button type="button" class="linkbtn" data-clear="1">I’ve paid: clear my cart</button></p>` : '') +
       `</div>`;
   }
