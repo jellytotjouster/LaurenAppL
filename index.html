@@ -89,62 +89,148 @@
 })();
 </script>
 <script id="calm-guard">
-/* A safety net for phones that cannot keep up. The whole site already has a calm version (no opening, no rain, no sparks, no moving clouds, no video) that the page uses when a device asks for "reduce motion". This guard switches a visitor to it by itself in two cases: (1) the page runs far too slowly once Home is showing (under about 11 frames a second over six seconds, or several frames over 0.3 s), or (2) the page died on this visitor a moment ago (the browser killed it and reloaded it). It is remembered for three days. ?calm turns the calm version on for good on that device, ?calm=0 turns the guard's decision off again. */
+/* A safety net for phones that struggle. The site has a calm version (no opening, no rain, no sparks, no jellyfish, nothing moving) that a phone gets when it asks for "reduce motion"; this guard gives it to a visitor by itself, in three levels:
+   1 calm   : the page is running far too slowly (under about 11 frames a second for six seconds), or ?calm in the address.
+   2 bare   : the page died on this visitor a moment ago (the browser killed it and reloaded it), or ?safe in the address. Calm plus no video, no sound engine and no cartoon characters, to give the next try the best chance.
+   ?calm=0 hands the decision back to the page. ?trace shows, on screen, what the page was doing before it last died.
+   A crash is told by a mark kept in the tab: the page writes it when it starts, and takes it away when the visitor leaves normally or the page has run well for a while. A page that dies cannot take it away. */
 (function () {
-  var KEY = 'appl-calm', DAYS3 = 3 * 864e5, calm = false, why = '', ss = null;
+  var DAY = 864e5, ss = null, ls = null;
   try { ss = window.sessionStorage; } catch (e) {}
-  function lsGet() { try { return localStorage.getItem(KEY); } catch (e) { return null; } }
-  function lsSet(v) { try { localStorage.setItem(KEY, v); } catch (e) {} }
-  try {
-    var q = location.search;
-    if (/[?&]calm=0(&|$)/.test(q)) { try { localStorage.removeItem(KEY); } catch (e) {} if (ss) { ss.removeItem('appl-trying'); ss.setItem('appl-ok', '1'); } }
-    else if (/[?&]calm(=1)?(&|$)/.test(q)) lsSet('m');
-    var v = lsGet();
-    if (v === 'm') { calm = true; why = 'asked for'; }
-    else if (v && Date.now() - (+v) < DAYS3) { calm = true; why = 'remembered'; }
-    if (!calm && ss && ss.getItem('appl-trying') && !ss.getItem('appl-ok')) { calm = true; why = 'the page died here a moment ago'; lsSet(String(Date.now())); }
-  } catch (e) {}
-  if (calm) {
-    document.documentElement.classList.add('appl-calm');
+  try { ls = window.localStorage; } catch (e) {}
+  function get(s, k) { try { return s ? s.getItem(k) : null; } catch (e) { return null; } }
+  function put(s, k, v) { try { if (s) s.setItem(k, v); } catch (e) {} }
+  function del(s, k) { try { if (s) s.removeItem(k); } catch (e) {} }
+  function onReady(f) { if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', f); else f(); }
+  var q = location.search, t0 = Date.now(), mode = 0, why = '', crashed = false;
+  function has(re) { return re.test(q); }
+
+  /* what the page is doing, kept in this phone's storage */
+  var tr = [];
+  function save() { put(ls, 'appl-trace-cur', JSON.stringify({ at: t0, mode: mode, ua: String(navigator.userAgent).slice(0, 110), alive: Date.now() - t0, ev: tr })); }
+  function note(s) { tr.push([Date.now() - t0, s]); if (tr.length > 70) tr.splice(1, 1); save(); }
+
+  /* did the last load in this tab die? */
+  var prev = +get(ss, 'appl-run') || 0;
+  crashed = !!prev && !get(ss, 'appl-ok') && (t0 - prev) < 120000;
+  if (crashed) { var old = get(ls, 'appl-trace-cur'); if (old) put(ls, 'appl-trace-crash', old); put(ls, 'appl-crashes', String((+get(ls, 'appl-crashes') || 0) + 1)); }
+
+  /* which version does this visitor get? */
+  if (has(/[?&]calm=0(&|$)/)) { del(ls, 'appl-calm'); del(ls, 'appl-bare'); crashed = false; }
+  else if (has(/[?&]safe(=1)?(&|$)/)) { put(ls, 'appl-bare', 'm'); mode = 2; why = 'asked for'; }
+  else if (has(/[?&]calm(=1)?(&|$)/)) { put(ls, 'appl-calm', 'm'); mode = 1; why = 'asked for'; }
+  else {
+    var bare = get(ls, 'appl-bare'), calm = get(ls, 'appl-calm');
+    if (crashed) { put(ls, 'appl-bare', String(t0)); mode = 2; why = 'the page died here a moment ago'; }
+    else if (bare && (bare === 'm' || t0 - +bare < DAY)) { mode = 2; why = 'remembered'; }
+    else if (calm && (calm === 'm' || t0 - +calm < 3 * DAY)) { mode = 1; why = 'remembered'; }
+  }
+
+  put(ss, 'appl-run', String(t0)); del(ss, 'appl-ok');
+  function healthy(s) { if (get(ss, 'appl-ok')) return; put(ss, 'appl-ok', '1'); note('healthy: ' + s); }
+  window.addEventListener('pagehide', function () { if (!get(ss, 'appl-ok')) del(ss, 'appl-run'); });
+  window.addEventListener('pageshow', function (e) { if (e.persisted) { put(ss, 'appl-run', String(Date.now())); put(ss, 'appl-ok', '1'); } });
+  note('start mode=' + mode + (why ? ' (' + why + ')' : '') + (crashed ? ' AFTER A CRASH' : ''));
+  window.AppLCalm = mode ? { on: true, mode: mode, why: why } : null;
+
+  /* the calm and bare versions */
+  if (mode) {
+    var root = document.documentElement; root.classList.add('appl-calm'); if (mode === 2) root.classList.add('appl-bare');
     try {
       var real = window.matchMedia.bind(window);
-      window.matchMedia = function (q) {
-        var r = real(q);
-        if (/prefers-reduced-motion\s*:\s*reduce/.test(String(q))) return { matches: true, media: r.media, onchange: null, addEventListener: function () {}, removeEventListener: function () {}, addListener: function () {}, removeListener: function () {}, dispatchEvent: function () { return false; } };
+      window.matchMedia = function (qq) {
+        var r = real(qq);
+        if (/prefers-reduced-motion\s*:\s*reduce/.test(String(qq))) return { matches: true, media: r.media, onchange: null, addEventListener: function () {}, removeEventListener: function () {}, addListener: function () {}, removeListener: function () {}, dispatchEvent: function () { return false; } };
         return r;
       };
     } catch (e) {}
-    window.AppLCalm = { on: true, why: why };
-    return;
-  }
-  /* not calm yet: watch how the page runs once Home is showing */
-  var started = false, poll = 0, tries = 0;
-  window.addEventListener('pagehide', function () { try { if (ss && !ss.getItem('appl-ok')) ss.removeItem('appl-trying'); } catch (e) {} });
-  function begin() {
-    if (started) return; started = true; clearInterval(poll);
-    if (ss) ss.setItem('appl-trying', String(Date.now()));
-    var W = 6000, t0 = 0, last = 0, n = 0, longs = 0, dropped = false;
-    document.addEventListener('visibilitychange', function () { if (document.hidden) dropped = true; });
-    function frame(ts) {
-      if (dropped) { dropped = false; t0 = 0; n = 0; longs = 0; last = 0; }            // the visitor left the tab: start the count again
-      if (!t0) { t0 = ts; last = ts; requestAnimationFrame(frame); return; }
-      n++; if (ts - last > 300) longs++; last = ts;
-      if (ts - t0 < W) { requestAnimationFrame(frame); return; }
-      var fps = n / ((ts - t0) / 1000);
-      if (ss) ss.setItem('appl-ok', '1');
-      if (fps < 11 || longs >= 5) {
-        lsSet(String(Date.now()));
-        window.AppLCalmReport = { fps: Math.round(fps * 10) / 10, longFrames: longs };
-        try { location.reload(); } catch (e) {}
-      } else window.AppLCalmReport = { fps: Math.round(fps * 10) / 10, longFrames: longs, fine: true };
+    if (mode === 2) { try { window.AudioContext = undefined; window.webkitAudioContext = undefined; } catch (e) {} }
+    var st = document.createElement('style'); st.id = 'appl-calm-css';
+    st.textContent = 'html.appl-calm .stage .sparks, html.appl-calm .stage .jellies, html.appl-calm .stage .flies, html.appl-calm .stage .bolt, html.appl-calm .stage .flash, html.appl-calm .wsp, html.appl-calm .bees, html.appl-calm .flk, html.appl-calm .stage .pdl, html.appl-calm .stage .pde { display: none !important; }\n'
+      + 'html.appl-bare video, html.appl-bare .tri, html.appl-bare .tri-wrap, html.appl-bare .stage .rain { display: none !important; }';
+    (document.head || root).appendChild(st);
+    /* the page's own "reduce motion" rules live in @media blocks that only a phone's setting can switch on: copy them out, so this version gets exactly what that setting would give it */
+    var mirrored = false;
+    function mirror() {
+      if (mirrored) return; var out = [], sheets = document.styleSheets;
+      function pre(sel) { return sel.split(/,(?![^(]*\))/).map(function (x) { x = x.trim(); return /^html(?![\w-])/.test(x) ? 'html.appl-calm' + x.slice(4) : 'html.appl-calm ' + x; }).join(', '); }
+      for (var s = 0; s < sheets.length; s++) {
+        var rules; try { rules = sheets[s].cssRules; } catch (e) { continue; } if (!rules) continue;
+        for (var i = 0; i < rules.length; i++) {
+          var r = rules[i];
+          if (r.type === 4 && /prefers-reduced-motion\s*:\s*reduce/.test(r.conditionText || (r.media && r.media.mediaText) || '')) {
+            for (var j = 0; j < r.cssRules.length; j++) { var x = r.cssRules[j]; if (x.type === 1 && x.selectorText) out.push(pre(x.selectorText) + ' { ' + x.style.cssText + ' }'); }
+          }
+        }
+      }
+      if (out.length) { mirrored = true; var m = document.createElement('style'); m.id = 'appl-calm-mirror'; m.textContent = out.join('\n'); (document.head || root).appendChild(m); note('copied ' + out.length + ' calm rules'); }
     }
-    requestAnimationFrame(frame);
+    onReady(function () { mirror(); }); window.addEventListener('load', mirror);
+    if (mode === 2) {                                          // no video decoding at all
+      var quiet = function (v) { try { v.pause(); v.removeAttribute('autoplay'); v.preload = 'none'; if (v.getAttribute('src')) { v.removeAttribute('src'); v.load(); } Array.prototype.forEach.call(v.querySelectorAll('source'), function (s) { s.remove(); }); } catch (e) {} };
+      onReady(function () {
+        Array.prototype.forEach.call(document.querySelectorAll('video'), quiet);
+        try { new MutationObserver(function (recs) { recs.forEach(function (r) { Array.prototype.forEach.call(r.addedNodes, function (n) { if (n.tagName === 'VIDEO') quiet(n); else if (n.querySelectorAll) Array.prototype.forEach.call(n.querySelectorAll('video'), quiet); }); }); }).observe(document.documentElement, { childList: true, subtree: true }); } catch (e) {}
+      });
+    }
   }
-  poll = setInterval(function () {
-    if (++tries > 240) { clearInterval(poll); return; }
-    var s = document.querySelector('.hero .stage');
-    if (s && s.classList.contains('sky-on') && !s.classList.contains('intro') && !document.hidden) setTimeout(begin, 1500);
-  }, 500);
+
+  /* breadcrumbs: what the page did, in order */
+  onReady(function () { note('document read'); }); window.addEventListener('load', function () { note('loaded'); });
+  window.addEventListener('hashchange', function () { note('hash ' + location.hash); });
+  window.addEventListener('error', function (e) { note('js error: ' + String(e.message).slice(0, 90)); });
+  document.addEventListener('play', function (e) { var v = e.target; if (v && v.tagName === 'VIDEO') note('video playing ' + String(v.currentSrc || '').split('/').pop()); }, true);
+  document.addEventListener('error', function (e) { var n = e.target; if (n && (n.tagName === 'VIDEO' || n.tagName === 'IMG')) note('file failed: ' + String(n.currentSrc || n.src || '').split('/').pop().slice(0, 40)); }, true);
+  if (mode < 2) {
+    var AC0 = window.AudioContext || window.webkitAudioContext;
+    if (AC0) { try { var W = function (a, b2) { var c = new AC0(a, b2); note('sound engine made'); return c; }; W.prototype = AC0.prototype; window.AudioContext = W; window.webkitAudioContext = W; } catch (e) {} }
+  }
+  var lastStage = '', vis = 0;
+  setInterval(function () {
+    var s = document.querySelector('.hero .stage'), c = s ? s.className : '';
+    if (c !== lastStage) { lastStage = c; note('opening/home: ' + c); } else save();
+    if (!document.hidden) { vis += 1; if (vis >= 30) healthy('30 s without trouble'); }
+  }, 1000);
+
+  /* ?trace: show it on screen */
+  if (has(/[?&]trace(=|&|$)/)) onReady(function () {
+    var box = document.createElement('pre'); box.style.cssText = 'position:fixed;left:0;right:0;top:0;max-height:62vh;overflow:hidden;margin:0;padding:6px 8px;background:rgba(0,0,0,.88);color:#9f9;font:10px/1.35 ui-monospace,Menlo,monospace;z-index:2147483647;pointer-events:none;white-space:pre-wrap;word-break:break-all';
+    document.body.appendChild(box);
+    function paint() {
+      var lines = [], crash = get(ls, 'appl-trace-crash');
+      try { if (crash) { var c = JSON.parse(crash); lines.push('LAST CRASHED RUN  version ' + c.mode + '  lived ' + Math.round(c.alive / 1000) + ' s'); lines.push(c.ua); c.ev.slice(-16).forEach(function (x) { lines.push('  +' + x[0] + 'ms ' + x[1]); }); } else lines.push('No crash recorded on this phone.'); } catch (e) {}
+      lines.push('THIS RUN  version ' + mode + (why ? ' (' + why + ')' : '') + '  crashes seen here: ' + (get(ls, 'appl-crashes') || 0));
+      tr.slice(-8).forEach(function (x) { lines.push('  +' + x[0] + 'ms ' + x[1]); });
+      box.textContent = lines.join('\n');
+    }
+    paint(); setInterval(paint, 1500);
+  });
+
+  /* version 0 only: watch how the page runs once Home is showing, and go calm if it cannot keep up */
+  if (mode === 0) {
+    var started = false, poll = 0, tries = 0;
+    var begin = function () {
+      if (started) return; started = true; clearInterval(poll);
+      var W2 = 6000, tt = 0, last = 0, n = 0, longs = 0, dropped = false;
+      document.addEventListener('visibilitychange', function () { if (document.hidden) dropped = true; });
+      var frame = function (ts) {
+        if (dropped) { dropped = false; tt = 0; n = 0; longs = 0; last = 0; }
+        if (!tt) { tt = ts; last = ts; requestAnimationFrame(frame); return; }
+        n++; if (ts - last > 300) longs++; last = ts;
+        if (ts - tt < W2) { requestAnimationFrame(frame); return; }
+        var fps = n / ((ts - tt) / 1000);
+        window.AppLCalmReport = { fps: Math.round(fps * 10) / 10, longFrames: longs };
+        if (fps < 11 || longs >= 5) { note('too slow: ' + Math.round(fps) + ' fps, going calm'); put(ls, 'appl-calm', String(Date.now())); try { location.reload(); } catch (e) {} }
+        else { window.AppLCalmReport.fine = true; healthy('Home ran at ' + Math.round(fps) + ' fps'); }
+      };
+      requestAnimationFrame(frame);
+    };
+    poll = setInterval(function () {
+      if (++tries > 240) { clearInterval(poll); return; }
+      var s = document.querySelector('.hero .stage');
+      if (s && s.classList.contains('sky-on') && !s.classList.contains('intro') && !document.hidden) setTimeout(begin, 1500);
+    }, 500);
+  }
 })();
 </script>
 </head>
@@ -3316,12 +3402,14 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
     g.className = 'gate'; g.setAttribute('role', 'group'); g.setAttribute('aria-label', 'Start LaurenAppL');
     g.innerHTML =
       '<button type="button" class="gate-go"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path class="sp" d="M4 9.5h3.6L12 5.6v12.8l-4.4-3.9H4z"/><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M15.2 9.2a4 4 0 0 1 0 5.6"/><path d="M17.8 6.8a7.4 7.4 0 0 1 0 10.4"/></g></svg>Tap to enter</button>' +
-      '<p class="gate-note">Sound on</p>';
+      '<p class="gate-note">Sound on</p>' +
+      '<button type="button" class="gate-quiet gate-light">' + (window.AppLCalm && window.AppLCalm.on ? 'Full version' : 'Lighter version') + '</button>';
     hero.stage.appendChild(g);
     hero.stage.classList.add('gated');
     gateEl = g;
     g.addEventListener('click', e => {
       e.stopPropagation();
+      if (e.target.closest && e.target.closest('.gate-light')) { try { location.replace(location.pathname + (window.AppLCalm && window.AppLCalm.on ? '?calm=0' : '?calm') + location.hash); } catch (err) {} return; }   // the way out for a phone that struggles
       enterFromGate(true);                             // the speaker in the corner is how to say no: it changes what this tap does
     });
     try { if (!matchMedia('(pointer: coarse)').matches) g.querySelector('.gate-go').focus({ preventScroll: true }); } catch (err) {}   // a keyboard can press Enter at once; a phone has no use for the ring
