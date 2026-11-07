@@ -22,32 +22,70 @@
 <script id="lab-private-js">(function(){try{var q=location.search;if(/[?&]lab=0(&|$)/.test(q))localStorage.removeItem("appl-lab");else if(/[?&]lab(=1)?(&|$)/.test(q))localStorage.setItem("appl-lab","1");if(localStorage.getItem("appl-lab")==="1")document.documentElement.classList.add("lab-on");}catch(e){}})();</script>
 <style id="tap-fix-css">@media (hover: none) { .w:hover, .nav-play:hover { transform: none !important; } }</style>
 <script id="tap-fix">
-/* iPhone Safari holds back the first tap on a link while it decides whether the tap is a "hover". The four words on the washing line open on the first touch instead: a quick, still touch-and-release on a word opens it at once. A drag, a long press or a second finger does nothing special, and the normal click is stopped so a word never opens twice. */
+/* iPhone Safari holds back the first tap on a link while it decides whether the tap is a "hover". The four words on the washing line open on the first touch instead: a quick, still touch-and-release on a word opens it at once (touch events first, pointer events as a second route). A drag, a long press or a second finger is left alone, and the browser's own click for the same tap is stopped so a word never opens twice. Add ?tapdebug to the address to see a live log on screen. */
 (function () {
   var SEL = '.hero .menu-home .nc a', down = null, until = 0, going = false;
+  var DEBUG = /[?&]tapdebug(=|&|$)/.test(location.search), box = null, lines = [], t0 = Date.now();
+  function say(s) {
+    if (!DEBUG) return;
+    try {
+      if (!box || !box.parentNode) { if (!document.body) return; box = document.createElement('pre'); box.style.cssText = 'position:fixed;left:0;right:0;bottom:0;max-height:46vh;overflow:hidden;margin:0;padding:6px 8px;background:rgba(0,0,0,.86);color:#9f9;font:10px/1.35 ui-monospace,Menlo,monospace;z-index:2147483647;pointer-events:none;white-space:pre-wrap;word-break:break-all'; document.body.appendChild(box); }
+      lines.push('+' + (Date.now() - t0) + 'ms ' + s); if (lines.length > 28) lines.shift(); box.textContent = lines.join('\n');
+    } catch (e) {}
+  }
+  function nm(t) { if (!t || !t.tagName) return String(t); var c = t.className && typeof t.className === 'string' ? '.' + t.className.trim().split(/\s+/).slice(0, 2).join('.') : ''; var h = t.getAttribute && t.getAttribute('href'); return t.tagName.toLowerCase() + c + (h ? '[' + h + ']' : ''); }
   function word(e) { var t = e.target; return t && t.closest ? t.closest(SEL) : null; }
+  function stageCls() { var s = document.querySelector('.hero .stage'); return s ? s.className : 'NO STAGE'; }
   function homeReady() { var s = document.querySelector('.hero .stage'), c = s && s.classList; return !!c && c.contains('on') && !c.contains('intro') && !c.contains('gated'); }
+  function begin(e, x, y, kind) {
+    var ready = homeReady(), a = word(e), top = null;
+    try { top = document.elementFromPoint(x, y); } catch (er) {}
+    if (DEBUG) say(kind + ' down  target=' + nm(e.target) + '  atPoint=' + nm(top) + '  ready=' + ready + '  word=' + !!a);
+    if (!ready || !a) { down = null; return; }
+    down = { a: a, x: x, y: y, at: Date.now() };
+  }
+  function act(a, why) {
+    if (Date.now() < until) { say(why + ' ignored (already opened)'); return; }
+    until = Date.now() + 800; going = true; down = null;
+    say(why + ' -> opening ' + a.getAttribute('href'));
+    try { a.click(); } finally { going = false; }
+    setTimeout(function () { var v = document.querySelector('.view:not([hidden])'); say('0.7 s later: hash=' + location.hash + ' view=' + (v ? v.getAttribute('data-view') : '?')); }, 700);
+  }
+  if (DEBUG) { say('UA ' + navigator.userAgent.replace(/\s+/g, ' ').slice(0, 90)); say('userActivation=' + (navigator.userActivation ? 'yes' : 'no') + ' touchPoints=' + navigator.maxTouchPoints + ' hover=' + (matchMedia('(hover: hover)').matches ? 'hover' : 'none') + ' size=' + innerWidth + 'x' + innerHeight); }
   document.addEventListener('touchstart', function (e) {
-    down = null; if (e.touches.length !== 1 || !homeReady()) return;
-    var a = word(e); if (!a) return; var f = e.touches[0];
-    down = { a: a, x: f.clientX, y: f.clientY, at: Date.now() };
+    down = null; if (e.touches.length !== 1) { say('touchstart ignored: ' + e.touches.length + ' fingers'); return; }
+    var f = e.touches[0]; begin(e, f.clientX, f.clientY, 'touchstart');
+  }, { capture: true, passive: true });
+  document.addEventListener('pointerdown', function (e) {
+    if (e.pointerType !== 'touch') return;
+    if (!down) begin(e, e.clientX, e.clientY, 'pointerdown');
   }, { capture: true, passive: true });
   document.addEventListener('touchmove', function (e) {
     if (!down) return; var f = e.touches[0];
-    if (!f || Math.abs(f.clientX - down.x) > 10 || Math.abs(f.clientY - down.y) > 10) down = null;
+    if (!f || Math.abs(f.clientX - down.x) > 10 || Math.abs(f.clientY - down.y) > 10) { say('moved: no tap'); down = null; }
   }, { capture: true, passive: true });
-  document.addEventListener('touchcancel', function () { down = null; }, { capture: true, passive: true });
+  document.addEventListener('touchcancel', function () { say('touchcancel'); down = null; }, { capture: true, passive: true });
   document.addEventListener('touchend', function (e) {
-    var d = down; down = null;
-    if (!d || e.touches.length || Date.now() - d.at > 700 || !homeReady()) return;
-    if (e.cancelable) e.preventDefault();                          // no second, delayed click from the same tap
-    until = Date.now() + 800; going = true;
-    try { d.a.click(); } finally { going = false; }
+    var d = down; say('touchend  have=' + !!d + '  fingersLeft=' + e.touches.length + (d ? '  held=' + (Date.now() - d.at) + 'ms' : ''));
+    if (!d || e.touches.length || Date.now() - d.at > 700 || !homeReady()) { down = null; return; }
+    if (e.cancelable) e.preventDefault();
+    act(d.a, 'touchend');
+  }, { capture: true });
+  document.addEventListener('pointerup', function (e) {
+    if (e.pointerType !== 'touch') return;
+    var d = down; say('pointerup have=' + !!d);
+    if (!d || Date.now() - d.at > 700 || !homeReady()) return;
+    if (Math.abs(e.clientX - d.x) > 10 || Math.abs(e.clientY - d.y) > 10) { down = null; return; }
+    act(d.a, 'pointerup');
   }, { capture: true });
   document.addEventListener('click', function (e) {
-    if (going || Date.now() > until || !word(e)) return;
+    var w = word(e);
+    if (DEBUG && w) say('click  ' + (e.isTrusted ? 'by the browser' : 'ours') + '  target=' + nm(e.target) + (going ? '' : (Date.now() <= until ? '  (blocked: already opened)' : '')));
+    if (going || Date.now() > until || !w) return;
     e.preventDefault(); e.stopImmediatePropagation();               // the browser's own click for a tap already handled above
   }, true);
+  window.addEventListener('hashchange', function () { say('hashchange -> ' + location.hash); });
+  if (DEBUG) setTimeout(function () { say('stage classes: ' + stageCls()); }, 1500);
 })();
 </script>
 </head>
