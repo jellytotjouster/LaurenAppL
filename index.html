@@ -88,6 +88,65 @@
   if (DEBUG) setTimeout(function () { say('stage classes: ' + stageCls()); }, 1500);
 })();
 </script>
+<script id="calm-guard">
+/* A safety net for phones that cannot keep up. The whole site already has a calm version (no opening, no rain, no sparks, no moving clouds, no video) that the page uses when a device asks for "reduce motion". This guard switches a visitor to it by itself in two cases: (1) the page runs far too slowly once Home is showing (under about 11 frames a second over six seconds, or several frames over 0.3 s), or (2) the page died on this visitor a moment ago (the browser killed it and reloaded it). It is remembered for three days. ?calm turns the calm version on for good on that device, ?calm=0 turns the guard's decision off again. */
+(function () {
+  var KEY = 'appl-calm', DAYS3 = 3 * 864e5, calm = false, why = '', ss = null;
+  try { ss = window.sessionStorage; } catch (e) {}
+  function lsGet() { try { return localStorage.getItem(KEY); } catch (e) { return null; } }
+  function lsSet(v) { try { localStorage.setItem(KEY, v); } catch (e) {} }
+  try {
+    var q = location.search;
+    if (/[?&]calm=0(&|$)/.test(q)) { try { localStorage.removeItem(KEY); } catch (e) {} if (ss) { ss.removeItem('appl-trying'); ss.setItem('appl-ok', '1'); } }
+    else if (/[?&]calm(=1)?(&|$)/.test(q)) lsSet('m');
+    var v = lsGet();
+    if (v === 'm') { calm = true; why = 'asked for'; }
+    else if (v && Date.now() - (+v) < DAYS3) { calm = true; why = 'remembered'; }
+    if (!calm && ss && ss.getItem('appl-trying') && !ss.getItem('appl-ok')) { calm = true; why = 'the page died here a moment ago'; lsSet(String(Date.now())); }
+  } catch (e) {}
+  if (calm) {
+    document.documentElement.classList.add('appl-calm');
+    try {
+      var real = window.matchMedia.bind(window);
+      window.matchMedia = function (q) {
+        var r = real(q);
+        if (/prefers-reduced-motion\s*:\s*reduce/.test(String(q))) return { matches: true, media: r.media, onchange: null, addEventListener: function () {}, removeEventListener: function () {}, addListener: function () {}, removeListener: function () {}, dispatchEvent: function () { return false; } };
+        return r;
+      };
+    } catch (e) {}
+    window.AppLCalm = { on: true, why: why };
+    return;
+  }
+  /* not calm yet: watch how the page runs once Home is showing */
+  var started = false, poll = 0, tries = 0;
+  window.addEventListener('pagehide', function () { try { if (ss && !ss.getItem('appl-ok')) ss.removeItem('appl-trying'); } catch (e) {} });
+  function begin() {
+    if (started) return; started = true; clearInterval(poll);
+    if (ss) ss.setItem('appl-trying', String(Date.now()));
+    var W = 6000, t0 = 0, last = 0, n = 0, longs = 0, dropped = false;
+    document.addEventListener('visibilitychange', function () { if (document.hidden) dropped = true; });
+    function frame(ts) {
+      if (dropped) { dropped = false; t0 = 0; n = 0; longs = 0; last = 0; }            // the visitor left the tab: start the count again
+      if (!t0) { t0 = ts; last = ts; requestAnimationFrame(frame); return; }
+      n++; if (ts - last > 300) longs++; last = ts;
+      if (ts - t0 < W) { requestAnimationFrame(frame); return; }
+      var fps = n / ((ts - t0) / 1000);
+      if (ss) ss.setItem('appl-ok', '1');
+      if (fps < 11 || longs >= 5) {
+        lsSet(String(Date.now()));
+        window.AppLCalmReport = { fps: Math.round(fps * 10) / 10, longFrames: longs };
+        try { location.reload(); } catch (e) {}
+      } else window.AppLCalmReport = { fps: Math.round(fps * 10) / 10, longFrames: longs, fine: true };
+    }
+    requestAnimationFrame(frame);
+  }
+  poll = setInterval(function () {
+    if (++tries > 240) { clearInterval(poll); return; }
+    var s = document.querySelector('.hero .stage');
+    if (s && s.classList.contains('sky-on') && !s.classList.contains('intro') && !document.hidden) setTimeout(begin, 1500);
+  }, 500);
+})();
+</script>
 </head>
 <body>
 <script id="appl-api">
