@@ -20,6 +20,36 @@
 <style>:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style>
 <style id="lab-private">html:not(.lab-on) #tri-lab { display: none !important; } html:not(.lab-on) .hs-vchip small { display: none; }</style>
 <script id="lab-private-js">(function(){try{var q=location.search;if(/[?&]lab=0(&|$)/.test(q))localStorage.removeItem("appl-lab");else if(/[?&]lab(=1)?(&|$)/.test(q))localStorage.setItem("appl-lab","1");if(localStorage.getItem("appl-lab")==="1")document.documentElement.classList.add("lab-on");}catch(e){}})();</script>
+<style id="tap-fix-css">@media (hover: none) { .w:hover, .nav-play:hover { transform: none !important; } }</style>
+<script id="tap-fix">
+/* iPhone Safari holds back the first tap on a link while it decides whether the tap is a "hover". The four words on the washing line open on the first touch instead: a quick, still touch-and-release on a word opens it at once. A drag, a long press or a second finger does nothing special, and the normal click is stopped so a word never opens twice. */
+(function () {
+  var SEL = '.hero .menu-home .nc a', down = null, until = 0, going = false;
+  function word(e) { var t = e.target; return t && t.closest ? t.closest(SEL) : null; }
+  function homeReady() { var s = document.querySelector('.hero .stage'), c = s && s.classList; return !!c && c.contains('on') && !c.contains('intro') && !c.contains('gated'); }
+  document.addEventListener('touchstart', function (e) {
+    down = null; if (e.touches.length !== 1 || !homeReady()) return;
+    var a = word(e); if (!a) return; var f = e.touches[0];
+    down = { a: a, x: f.clientX, y: f.clientY, at: Date.now() };
+  }, { capture: true, passive: true });
+  document.addEventListener('touchmove', function (e) {
+    if (!down) return; var f = e.touches[0];
+    if (!f || Math.abs(f.clientX - down.x) > 10 || Math.abs(f.clientY - down.y) > 10) down = null;
+  }, { capture: true, passive: true });
+  document.addEventListener('touchcancel', function () { down = null; }, { capture: true, passive: true });
+  document.addEventListener('touchend', function (e) {
+    var d = down; down = null;
+    if (!d || e.touches.length || Date.now() - d.at > 700 || !homeReady()) return;
+    if (e.cancelable) e.preventDefault();                          // no second, delayed click from the same tap
+    until = Date.now() + 800; going = true;
+    try { d.a.click(); } finally { going = false; }
+  }, { capture: true });
+  document.addEventListener('click', function (e) {
+    if (going || Date.now() > until || !word(e)) return;
+    e.preventDefault(); e.stopImmediatePropagation();               // the browser's own click for a tap already handled above
+  }, true);
+})();
+</script>
 </head>
 <body>
 <script id="appl-api">
