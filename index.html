@@ -19,6 +19,7 @@
 <meta name="twitter:card" content="summary_large_image">
 <style>:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style>
 <style id="lab-private">html:not(.lab-on) #tri-lab { display: none !important; } html:not(.lab-on) .hs-vchip small { display: none; }</style>
+<script id="giveaway-end">(function () { try { if (Date.now() >= Date.UTC(2026, 10, 20, 19, 0, 0)) document.documentElement.classList.add("giveaway-over"); } catch (e) {} })();</script>
 <script id="lab-private-js">(function(){try{var q=location.search;if(/[?&]lab=0(&|$)/.test(q))localStorage.removeItem("appl-lab");else if(/[?&]lab(=1)?(&|$)/.test(q))localStorage.setItem("appl-lab","1");if(localStorage.getItem("appl-lab")==="1")document.documentElement.classList.add("lab-on");}catch(e){}})();</script>
 <style id="tap-fix-css">@media (hover: none) { .w:hover, .nav-play:hover { transform: none !important; } }</style>
 <script id="tap-fix">
@@ -544,6 +545,20 @@ html:not(.shop-sky) .shopsky .sky i { animation-play-state: paused; }
 /* High scores */
 .board-wrap { display: grid; gap: 14px; width: 100%; max-width: 560px; margin-inline: auto; min-width: 0; }
 .board-box { overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.giveaway { margin: 0; padding: 15px 18px; border-radius: 10px; border: 1px solid rgba(176, 134, 28, .5); background: #FFF4CF; color: #2B2412; font-size: 15px; line-height: 1.55; box-shadow: 0 2px 10px rgba(120, 90, 10, .12); }
+.giveaway strong { display: block; margin-bottom: 4px; font-size: 13px; font-weight: 700; letter-spacing: .12em; color: #7A5A00; }
+/* the Home banner: one slim band above the sky, same warm paper as the notice on the scores page */
+.giveaway-bar { background: #FFF4CF; border-bottom: 1px solid rgba(176, 134, 28, .5); color: #2B2412; }
+.giveaway-bar a { display: block; box-sizing: border-box; width: min(100%, 1080px); margin-inline: auto; padding: 10px clamp(16px, 4vw, 32px); color: inherit; text-decoration: none; text-align: center; font-size: 14px; line-height: 1.45; }
+.giveaway-bar strong { font-size: 12.5px; font-weight: 700; letter-spacing: .12em; color: #7A5A00; }
+.giveaway-bar .nb { white-space: nowrap; }
+.giveaway-bar .go { display: inline-block; margin-left: 2px; font-weight: 700; color: #7A5A00; }
+@media (max-width: 520px) { .giveaway-bar a { padding: 8px 14px; font-size: 13px; line-height: 1.4; } .giveaway-bar strong { font-size: 12px; } }
+@media (hover: hover) { .giveaway-bar a:hover { background: #FFEBB0; } }
+.giveaway-bar a:focus-visible { outline: 2px solid #7A5A00; outline-offset: -4px; }
+/* nothing shows over the opening itself; and both notices go by themselves once the giveaway time has passed */
+.view[data-view="home"]:has(.hero .stage.gated, .hero .stage.intro) .giveaway-bar { display: none; }
+html.giveaway-over .giveaway-bar, html.giveaway-over .giveaway { display: none; }
 .board { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .board th { padding: 10px 14px; text-align: left; font-size: 12px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
 .board td { padding: 11px 14px; border-top: 1px solid var(--line); }
@@ -1515,6 +1530,7 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
 
   <main id="main">
     <section class="view" data-view="home" hidden>
+      <aside class="giveaway-bar" aria-label="Giveaway"><a href="#play"><strong>GIVEAWAY ALERT:</strong> to celebrate the launch of LaurenAppL.com I will be giving a free print of your choice to whoever holds highest Drip Drip Drop score on the <span data-plain>20th November 2026 at 7pm GMT</span>. <span class="nb">Good luck! 🍀 <span class="go" aria-hidden="true">→</span></span></a></aside>
       <div class="hero stages" id="hero" data-page="overcast" data-drops="colour"></div>
     </section>
 
@@ -1631,6 +1647,7 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
           <h1 id="sc-h" tabindex="-1"><span class="gm gm-scores" aria-hidden="true"></span><span class="sr">High scores</span></h1>
         </header>
         <div class="board-wrap">
+          <p class="giveaway" role="note"><strong>GIVEAWAY ALERT:</strong> to celebrate the launch of LaurenAppL.com I will be giving a free print of your choice to whoever holds highest Drip Drip Drop score on the <span data-plain>20th November 2026 at 7pm GMT</span>. Good luck! 🍀</p>
           <div class="board-box" id="sc-box" hidden>
             <table class="board">
               <caption class="sr">Top twenty scores in Drip Drip Drop</caption>
