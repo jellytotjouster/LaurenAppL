@@ -983,8 +983,8 @@ i.mk { position: absolute; left: 50%; top: 46%; width: 30%; height: 38%; transfo
 .nf .logo404 { width: min(70%, 340px); color: var(--ink); }
 .nf .logo404 svg { display: block; width: 100%; height: auto; overflow: visible; }
 .hint-row { display: flex; flex-wrap: wrap; gap: 6px 18px; }
-.foot { width: min(100%, 1080px); margin-inline: auto; padding: 0 clamp(16px, 4vw, 32px) 44px; display: grid; gap: 14px; }
-.foot::before { content: ""; border-top: 1px solid var(--line); margin-bottom: 14px; }
+.foot { width: min(100%, 1080px); margin-inline: auto; padding: 0 clamp(16px, 4vw, 32px) 22px; display: grid; gap: 10px; }
+.foot::before { content: ""; border-top: 1px solid var(--line); margin-bottom: 10px; }
 .foot nav { display: flex; flex-wrap: wrap; gap: 8px 22px; font-size: 14px; }
 .foot a { text-decoration: none; font-weight: 500; }
 .foot a:hover { text-decoration: underline; }
@@ -1389,6 +1389,8 @@ html.shop-sky .gal-none { width: fit-content; padding: 8px 16px; border-radius: 
 html.work-dusk { background: #FBFAF6; }
 html.work-dusk body { background: transparent; }
 html.work-dusk .worksky { visibility: visible; opacity: .9; transition-delay: 0s; }
+/* off the Work page the sky fades out, then folds to nothing, so it cannot stretch the page (and the footer) below it */
+html:not(.work-dusk) .worksky { height: 0; transition: opacity .7s ease, visibility 0s linear .7s, height 0s linear .7s; }
 /* the menu and the logo turn pale while the sky is dark behind them */
 .hdr .nav { transition: filter .7s ease; }
 html.work-dusk .hdr .nav { filter: invert(1); }
