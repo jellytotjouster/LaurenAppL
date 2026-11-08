@@ -4,11 +4,13 @@
 import crypto from 'node:crypto';
 
 /* ---------- storage ---------- */
+let realStore = null;
 export function blobStore() {
   if (globalThis.__applTestStore) return globalThis.__applTestStore;       // only ever set by the local tests
+  if (realStore) return realStore;                                         // one connection per warm server, so what it remembers is shared by every request
   let lib = null;
   const load = async () => lib || (lib = await import('@vercel/blob'));
-  return {
+  return (realStore = {
     async read(path) {
       const { get } = await load();
       const r = await get(path, { access: 'private', useCache: false });
@@ -22,7 +24,7 @@ export function blobStore() {
       });
     },
     isConflict(e) { return !!e && (e.name === 'BlobPreconditionFailedError' || /precondition|already exists|etag/i.test(String(e.message || ''))); }
-  };
+  });
 }
 
 /* read, change, write back; if somebody else wrote in between, read again and retry (so two people saving at once never lose each other's entry) */
@@ -48,13 +50,48 @@ export const pidOf = secret => crypto.createHash('sha256').update('appl-player:'
 const byRank = (a, b) => b.score - a.score || a.at - b.at || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
 const validRow = r => r && typeof r.id === 'string' && typeof r.name === 'string' && Number.isInteger(r.score) && r.score > 0 && Number.isFinite(r.at);
 const pub = r => ({ id: r.id, name: r.name, score: r.score, at: r.at });
+const nameKey = s => String(s == null ? '' : s).toLowerCase().replace(/\s+/g, ' ').trim();       // "LAH", "lah" and " Lah " are one name
+
+/* One person can play on several phones or browsers, and behind the scenes each of those is its own player. The public board shows every name once, with its best score from any of them,
+   so nobody sees "LAH" three times while his lower scores quietly go missing. The row is marked as the viewer's own (id = me) when any of the viewer's phones is in it. */
+function oneRowPerName(all, me) {                                   // all: best first
+  const by = new Map(), out = [];
+  for (const r of all) {
+    const k = nameKey(r.name), g = by.get(k);
+    if (g) { if (me && r.id === me) g.id = me; continue; }
+    const row = pub(r); by.set(k, row); out.push(row);
+  }
+  return out;
+}
 
 /* ---------- high scores ---------- */
-export async function scoresGet(store, me) {
-  const { data } = await store.read('data/scores.json');
-  const all = (data && Array.isArray(data.rows) ? data.rows : []).filter(validRow).sort(byRank);
-  const hit = typeof me === 'string' && /^[0-9a-f]{20}$/.test(me) ? all.find(r => r.id === me) : null;          // a player's own row comes back even when they are below the top 50
-  return json(200, { rows: all.slice(0, TOP_SCORES).map(pub), mine: hit ? pub(hit) : null });
+/* The free storage plan allows 10,000 reads a month, so the board is remembered for a few seconds on each warm server: any number of people watching it (each open board asks every 20 seconds)
+   costs at most one read every few seconds. A player's own save asks for a fresh read, and every save or removal makes the server forget what it remembered. */
+const BOARD_TTL = 8000;
+const board = { store: null, at: 0, rows: null, pending: null };
+const forgetBoard = () => { board.rows = null; board.at = 0; board.pending = null; };
+async function readBoard(store, fresh, now) {
+  if (board.store !== store) { board.store = store; forgetBoard(); }
+  if (!fresh) {
+    if (board.rows && now - board.at < BOARD_TTL) return board.rows;
+    if (board.pending) return board.pending;                     // somebody else is already reading it: share that read
+  }
+  const p = (async () => {
+    const { data } = await store.read('data/scores.json');
+    return (data && Array.isArray(data.rows) ? data.rows : []).filter(validRow).sort(byRank);
+  })();
+  board.pending = p;
+  try { const rows = await p; if (board.pending === p) { board.rows = rows; board.at = now; } return rows; }
+  finally { if (board.pending === p) board.pending = null; }
+}
+
+export async function scoresGet(store, me, fresh = false, now = Date.now()) {
+  const all = await readBoard(store, fresh, now);
+  const myId = typeof me === 'string' && /^[0-9a-f]{20}$/.test(me) ? me : null;
+  const own = myId ? all.find(r => r.id === myId) : null;                                                   // this phone's own best
+  const merged = oneRowPerName(all, myId);
+  const hit = own ? merged.find(r => r.id === myId) : null;                                                 // the viewer's name on the board, even when below the top 50
+  return json(200, { rows: merged.slice(0, TOP_SCORES), mine: hit ? { ...hit, own: own.score } : null });
 }
 
 export async function scoresPost(store, body, now = Date.now()) {
@@ -80,6 +117,7 @@ export async function scoresPost(store, body, now = Date.now()) {
   });
   if (out.rate) return json(429, { error: 'slow' });
   if (out.missing) return json(404, { error: 'none' });
+  forgetBoard();
   return json(200, { ok: true, kind: out.kind, best: out.best, id });
 }
 
@@ -117,6 +155,44 @@ export async function notifyPost(store, body, ip, now = Date.now()) {
   return json(200, { ok: true });
 }
 
+/* ---------- crash reports: a short, anonymous note a phone sends when the page died on it (or ran far too slowly) ---------- */
+const REPORT_KEEP = 60;
+let rall = [];                                                 // when this server took its latest notes: at most 30 an hour in all, to protect the free storage allowance
+const rseen = new Map();                                       // best-effort brake per visitor address (it resets when the function restarts; the real limit is keeping only the latest 60)
+const rlimited = (ip, now) => {
+  if (!ip) return false;
+  const a = (rseen.get(ip) || []).filter(x => now - x < 3600e3);
+  if (a.length >= 8) { rseen.set(ip, a); return true; }
+  a.push(now); rseen.set(ip, a);
+  if (rseen.size > 2000) rseen.clear();
+  return false;
+};
+const oneLine = (s, n) => String(s == null ? '' : s).replace(/[\u0000-\u001f\u007f\u2028\u2029]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, n);
+const whole = (v, max) => { const x = Math.round(+v); return Number.isFinite(x) ? Math.max(0, Math.min(max, x)) : 0; };
+export async function reportPost(store, body, ip, now = Date.now()) {
+  if (!body || typeof body !== 'object') return json(400, { error: 'bad' });
+  if (rlimited(ip, now)) return json(429, { error: 'slow' });
+  rall = rall.filter(x => now - x < 3600e3);
+  if (rall.length >= 30) return json(429, { error: 'slow' });
+  rall.push(now);
+  const rec = {
+    at: now,
+    tag: body.tag === 'slow' ? 'slow' : 'crash',
+    mode: whole(body.mode, 3), deadMode: whole(body.deadMode, 3),
+    ua: oneLine(body.ua, 160),
+    w: whole(body.w, 20000), h: whole(body.h, 20000), dpr: Math.round(Math.min(10, Math.max(0, +body.dpr || 0)) * 10) / 10,
+    mem: whole(body.mem, 256), cores: whole(body.cores, 256),
+    alive: whole(body.alive, 7200000), fps: whole(body.fps, 1000),
+    ev: (Array.isArray(body.ev) ? body.ev : []).slice(-18).map(e => Array.isArray(e) ? [whole(e[0], 7200000), oneLine(e[1], 90)] : null).filter(Boolean)
+  };
+  await update(store, 'data/reports.json', data => {
+    const list = data && Array.isArray(data.list) ? data.list : [];
+    list.unshift(rec);
+    return { next: { list: list.slice(0, REPORT_KEEP) }, out: 1 };
+  });
+  return json(200, { ok: true });
+}
+
 /* ---------- the owner page ---------- */
 const same = (a, b) => crypto.timingSafeEqual(crypto.createHash('sha256').update(String(a)).digest(), crypto.createHash('sha256').update(String(b)).digest());
 export const adminOk = (given, expected) => typeof expected === 'string' && expected.length >= 16 && typeof given === 'string' && given.length > 0 && same(given, expected);
@@ -125,10 +201,11 @@ export async function adminPost(store, body) {
   const act = body && body.action;
   if (act === 'ping') return json(200, { ok: true });
   if (act === 'list') {
-    const [s, n] = await Promise.all([store.read('data/scores.json'), store.read('data/notify.json')]);
+    const [s, n, rp] = await Promise.all([store.read('data/scores.json'), store.read('data/notify.json'), store.read('data/reports.json')]);
     const subs = Object.values(n.data && n.data.subs || {}).filter(x => x && typeof x.email === 'string').map(x => ({ email: x.email, topics: x.topics || {}, at: x.at || 0 }));
     const scores = (s.data && Array.isArray(s.data.rows) ? s.data.rows : []).filter(validRow).sort(byRank).map(pub);
-    return json(200, { subs, scores });
+    const reports = (rp.data && Array.isArray(rp.data.list) ? rp.data.list : []).filter(r => r && Number.isFinite(r.at) && Array.isArray(r.ev));
+    return json(200, { subs, scores, reports });
   }
   if (act === 'removeSub' && typeof body.email === 'string') {
     await update(store, 'data/notify.json', d => { const subs = d && d.subs || {}; const k = body.email.trim().toLowerCase(); if (!subs[k]) return null; delete subs[k]; return { next: { subs }, out: 1 }; });
@@ -148,6 +225,11 @@ export async function adminPost(store, body) {
       const rows = (d && Array.isArray(d.rows) ? d.rows : []).filter(validRow), n = rows.filter(r => r.id !== body.id);
       return n.length === rows.length ? null : { next: { rows: n }, out: 1 };
     });
+    forgetBoard();
+    return json(200, { ok: true });
+  }
+  if (act === 'clearReports') {
+    await update(store, 'data/reports.json', d => (d && Array.isArray(d.list) && d.list.length) ? { next: { list: [] }, out: 1 } : null);
     return json(200, { ok: true });
   }
   return json(400, { error: 'bad' });

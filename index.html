@@ -20,6 +20,32 @@
 <style>:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style>
 <style id="lab-private">html:not(.lab-on) #tri-lab { display: none !important; } html:not(.lab-on) .hs-vchip small { display: none; }</style>
 <script id="giveaway-end">(function () { try { if (Date.now() >= Date.UTC(2026, 10, 20, 19, 0, 0)) document.documentElement.classList.add("giveaway-over"); } catch (e) {} })();</script>
+<script id="cookie-note-js">
+/* The cookie notice. It says what the site keeps on a visitor's device and links to Privacy. It waits until the opening is over (or shows straight away on any other page), and "Got it" is remembered. */
+(function () {
+  var KEY = 'appl-cookie-ok', el = null, tries = 0, timer = 0;
+  function remembered() { try { return !!window.localStorage.getItem(KEY); } catch (e) { return false; } }
+  if (remembered()) return;
+  function ready() {
+    var home = document.querySelector('.view[data-view="home"]:not([hidden])'), s = document.querySelector('.hero .stage');
+    return !home || !s || !/\b(gated|intro)\b/.test(s.className);
+  }
+  function show() {
+    if (el || !document.body) return;
+    el = document.createElement('div'); el.id = 'cookie-note'; el.setAttribute('role', 'region'); el.setAttribute('aria-label', 'Cookies');
+    el.innerHTML = '<p>I don’t use tracking or advertising cookies, and I count visits without any. The site keeps a few small things on your device so it works: your cart, your game scores, your settings and, if your phone struggles, a note to give it the lighter version. <a href="#privacy">More in Privacy</a>.</p><button type="button">Got it</button>';
+    el.querySelector('button').addEventListener('click', function () {
+      try { window.localStorage.setItem(KEY, '1'); } catch (e) {}
+      el.remove(); el = null; document.documentElement.classList.remove('cookie-open'); document.documentElement.style.removeProperty('--cn-h');
+    });
+    document.body.appendChild(el);
+    document.documentElement.classList.add('cookie-open');
+    document.documentElement.style.setProperty('--cn-h', el.offsetHeight + 'px');
+  }
+  function check() { if (++tries > 240) { clearInterval(timer); return; } if (!el && ready() && document.readyState !== 'loading') { clearInterval(timer); setTimeout(show, 700); } }
+  timer = setInterval(check, 500);
+})();
+</script>
 <script id="lab-private-js">(function(){try{var q=location.search;if(/[?&]lab=0(&|$)/.test(q))localStorage.removeItem("appl-lab");else if(/[?&]lab(=1)?(&|$)/.test(q))localStorage.setItem("appl-lab","1");if(localStorage.getItem("appl-lab")==="1")document.documentElement.classList.add("lab-on");}catch(e){}})();</script>
 <style id="tap-fix-css">@media (hover: none) { .w:hover, .nav-play:hover { transform: none !important; } }</style>
 <script id="tap-fix">
@@ -93,18 +119,41 @@
 /* A safety net for phones that struggle. The site has a calm version (no opening, no rain, no sparks, no jellyfish, nothing moving) that a phone gets when it asks for "reduce motion"; this guard gives it to a visitor by itself, in three levels:
    1 calm   : the page is running far too slowly (under about 11 frames a second for six seconds), or ?calm in the address.
    2 bare   : the page died on this visitor a moment ago (the browser killed it and reloaded it), or ?safe in the address. Calm plus no video, no sound engine and no cartoon characters, to give the next try the best chance.
+   3 lite   : it died again even in the lighter version, so the visitor is sent to /lite.html, a tiny page with no scripts and small pictures.
+   A short anonymous note (the phone's browser, screen size and what the page was doing before it died) is sent to /api/report when a crash is noticed.
    ?calm=0 hands the decision back to the page. ?trace shows, on screen, what the page was doing before it last died.
    A crash is told by a mark kept in the tab: the page writes it when it starts, and takes it away when the visitor leaves normally or the page has run well for a while. A page that dies cannot take it away. */
 (function () {
   var DAY = 864e5, ss = null, ls = null;
   try { ss = window.sessionStorage; } catch (e) {}
   try { ls = window.localStorage; } catch (e) {}
+  if (!ss) ss = (function () {
+    var P = 'AppL~';
+    function read() { try { var n = window.name || '', i = n.indexOf(P); return i < 0 ? {} : JSON.parse(n.slice(i + P.length)); } catch (e) { return {}; } }
+    function write(o) { try { var n = window.name || '', i = n.indexOf(P); window.name = (i < 0 ? n : n.slice(0, i)) + P + JSON.stringify(o); } catch (e) {} }
+    return { getItem: function (k) { var o = read(); return k in o ? o[k] : null; }, setItem: function (k, v) { var o = read(); o[k] = String(v); write(o); }, removeItem: function (k) { var o = read(); delete o[k]; write(o); } };
+  })();
+  if (!ls) ls = ss;
   function get(s, k) { try { return s ? s.getItem(k) : null; } catch (e) { return null; } }
   function put(s, k, v) { try { if (s) s.setItem(k, v); } catch (e) {} }
   function del(s, k) { try { if (s) s.removeItem(k); } catch (e) {} }
   function onReady(f) { if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', f); else f(); }
   var q = location.search, t0 = Date.now(), mode = 0, why = '', crashed = false;
   function has(re) { return re.test(q); }
+  var deadMode = 0;
+  /* one short, anonymous note when a crash is noticed (or the page ran far too slowly): the browser, the screen, and what the page was doing before it stopped */
+  function report(tag, fps, cb) {
+    var fired = false;
+    function done() { if (fired) return; fired = true; if (cb) cb(); }
+    try {
+      var dead = null; try { var c = get(ls, 'appl-trace-crash'); if (c) dead = JSON.parse(c); } catch (e) {}
+      var body = JSON.stringify({ tag: tag, mode: mode, deadMode: deadMode, ua: String(navigator.userAgent).slice(0, 160), w: window.innerWidth, h: window.innerHeight, dpr: window.devicePixelRatio || 1, mem: navigator.deviceMemory || 0, cores: navigator.hardwareConcurrency || 0, alive: dead && tag === 'crash' ? dead.alive : 0, fps: fps || 0, ev: dead && tag === 'crash' && dead.ev ? dead.ev.slice(-18) : [] });
+      if (!cb && navigator.sendBeacon && navigator.sendBeacon('/api/report', new Blob([body], { type: 'application/json' }))) return;
+      if (cb) setTimeout(done, 900);                          // never keep a visitor waiting for the note
+      if (window.fetch) { fetch('/api/report', { method: 'POST', headers: { 'content-type': 'application/json' }, body: body, keepalive: true }).then(done, done); return; }
+      var x = new XMLHttpRequest(); x.open('POST', '/api/report'); x.setRequestHeader('content-type', 'application/json'); x.onloadend = done; x.send(body);
+    } catch (e) { done(); }
+  }
 
   /* what the page is doing, kept in this phone's storage */
   var tr = [];
@@ -114,19 +163,28 @@
   /* did the last load in this tab die? */
   var prev = +get(ss, 'appl-run') || 0;
   crashed = !!prev && !get(ss, 'appl-ok') && (t0 - prev) < 120000;
-  if (crashed) { var old = get(ls, 'appl-trace-cur'); if (old) put(ls, 'appl-trace-crash', old); put(ls, 'appl-crashes', String((+get(ls, 'appl-crashes') || 0) + 1)); }
+  if (crashed) { var old = get(ls, 'appl-trace-cur'); if (old) { put(ls, 'appl-trace-crash', old); try { deadMode = JSON.parse(old).mode || 0; } catch (e) {} } put(ls, 'appl-crashes', String((+get(ls, 'appl-crashes') || 0) + 1)); }
 
   /* which version does this visitor get? */
-  if (has(/[?&]calm=0(&|$)/)) { del(ls, 'appl-calm'); del(ls, 'appl-bare'); crashed = false; }
+  if (has(/[?&]calm=0(&|$)/)) { del(ls, 'appl-calm'); del(ls, 'appl-bare'); del(ls, 'appl-lite'); crashed = false; }
   else if (has(/[?&]safe(=1)?(&|$)/)) { put(ls, 'appl-bare', 'm'); mode = 2; why = 'asked for'; }
   else if (has(/[?&]calm(=1)?(&|$)/)) { put(ls, 'appl-calm', 'm'); mode = 1; why = 'asked for'; }
   else {
-    var bare = get(ls, 'appl-bare'), calm = get(ls, 'appl-calm');
-    if (crashed) { put(ls, 'appl-bare', String(t0)); mode = 2; why = 'the page died here a moment ago'; }
+    var bare = get(ls, 'appl-bare'), calm = get(ls, 'appl-calm'), lite = get(ls, 'appl-lite');
+    if (crashed) { if (deadMode >= 2) { mode = 3; why = 'it died in the lighter version too'; } else { put(ls, 'appl-bare', String(t0)); mode = 2; why = 'the page died here a moment ago'; } }
+    else if (lite && t0 - +lite < DAY) { mode = 3; why = 'remembered'; }
     else if (bare && (bare === 'm' || t0 - +bare < DAY)) { mode = 2; why = 'remembered'; }
     else if (calm && (calm === 'm' || t0 - +calm < 3 * DAY)) { mode = 1; why = 'remembered'; }
   }
 
+  if (crashed && mode !== 3) report('crash');
+  if (mode === 3) {                                          // the lighter version died too: a tiny page with no scripts (its link "Try the full site again" is /?calm=0)
+    put(ls, 'appl-lite', String(t0)); del(ss, 'appl-run'); put(ss, 'appl-ok', '1');
+    try { window.stop(); } catch (e) {}                       // the page stops loading first, so none of its heavy parts run while the note goes
+    var go = function () { try { location.replace('/lite.html'); } catch (e) {} };
+    if (crashed) report('crash', 0, go); else go();
+    return;
+  }
   put(ss, 'appl-run', String(t0)); del(ss, 'appl-ok');
   function healthy(s) { if (get(ss, 'appl-ok')) return; put(ss, 'appl-ok', '1'); note('healthy: ' + s); }
   window.addEventListener('pagehide', function () { if (!get(ss, 'appl-ok')) del(ss, 'appl-run'); });
@@ -221,7 +279,7 @@
         if (ts - tt < W2) { requestAnimationFrame(frame); return; }
         var fps = n / ((ts - tt) / 1000);
         window.AppLCalmReport = { fps: Math.round(fps * 10) / 10, longFrames: longs };
-        if (fps < 11 || longs >= 5) { note('too slow: ' + Math.round(fps) + ' fps, going calm'); put(ls, 'appl-calm', String(Date.now())); try { location.reload(); } catch (e) {} }
+        if (fps < 11 || longs >= 5) { note('too slow: ' + Math.round(fps) + ' fps, going calm'); report('slow', fps); put(ls, 'appl-calm', String(Date.now())); try { location.reload(); } catch (e) {} }
         else { window.AppLCalmReport.fine = true; healthy('Home ran at ' + Math.round(fps) + ' fps'); }
       };
       requestAnimationFrame(frame);
@@ -257,18 +315,26 @@
     var snap = { docs: rows.map(function (r) { return { id: r.id, data: function () { return { name: r.name, score: r.score, at: r.at }; } }; }) };
     listeners.forEach(function (l) { l.ok(snap); });
   }
-  function load(force, me) {
+  function load(force, me, fresh) {                     // fresh: ask the server to read the storage again (after this player's own save), not use what it remembers
     if (!force && (busy || Date.now() - last < 15000)) return busy || Promise.resolve();
-    var p = (me ? Promise.resolve(me) : pid().catch(function () { return ''; })).then(function (id) { return call('scores' + (id ? '?me=' + id : '')); })
+    var p = (me ? Promise.resolve(me) : pid().catch(function () { return ''; })).then(function (id) { return call('scores' + (id ? '?me=' + id : '') + (fresh ? (id ? '&' : '?') + 'fresh=1' : '')); })
       .then(function (j) { rows = j.rows || []; mine = j.mine || null; last = Date.now(); emit(); },
             function (e) { listeners.forEach(function (l) { if (l.err) l.err(e); }); throw e; });
     busy = p.then(function () { busy = null; }, function () { busy = null; });
     return p;
   }
+  var nk = function (s) { return String(s == null ? '' : s).toLowerCase().replace(/\s+/g, ' ').replace(/^ | $/g, ''); };     // "LAH", "lah" and " Lah " are one name
   var onBoardPage = function () { return /^#(play|scores)(\/|$)/.test(location.hash); };
   var soon = function () { if (listeners.length && onBoardPage()) load(false).catch(function () {}); };
   window.addEventListener('hashchange', soon);
   document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') soon(); });
+  /* a board that is left open keeps up with other people's scores: every 20 seconds while it is on screen and somebody is there (it rests after 15 minutes without a touch, click or key) */
+  var lastAct = Date.now();
+  ['pointerdown', 'keydown', 'touchstart', 'scroll', 'mousemove'].forEach(function (ev) { window.addEventListener(ev, function () { lastAct = Date.now(); }, { passive: true, capture: true }); });
+  setInterval(function () {
+    if (!listeners.length || document.visibilityState !== 'visible' || !/^#scores(\/|$)/.test(location.hash) || Date.now() - lastAct > 15 * 60000) return;
+    load(true).catch(function () {});
+  }, 20000);
 
   var rowsApi = {
     orderBy: function () { return rowsApi; }, limit: function () { return rowsApi; },
@@ -279,14 +345,16 @@
     },
     doc: function (id) {
       return {
-        get: function () {
-          return load(true, id).then(function () {
-            var hit = rows.filter(function (r) { return r.id === id; })[0] || (mine && mine.id === id ? mine : null);
+        get: function (name) {                           // the board's row for this name, from any phone; if the name is not on the board, this phone's own best
+          return load(true, id, true).then(function () {
+            var key = nk(name);
+            var hit = (key ? rows.filter(function (r) { return nk(r.name) === key; })[0] : null);
+            if (!hit && mine && mine.id === id) hit = { name: mine.name, score: typeof mine.own === 'number' ? mine.own : mine.score, at: mine.at };
             return { exists: !!hit, data: function () { return hit ? { name: hit.name, score: hit.score, at: hit.at } : null; } };
           });
         },
-        set: function (o) { return call('scores', { secret: secret(), name: o.name, score: o.score }).then(function () { return load(true, id).catch(function () {}); }); },
-        update: function (o) { return call('scores', { secret: secret(), name: o.name }).then(function () { return load(true, id).catch(function () {}); }); }
+        set: function (o) { return call('scores', { secret: secret(), name: o.name, score: o.score }).then(function () { return load(true, id, true).catch(function () {}); }); },
+        update: function (o) { return call('scores', { secret: secret(), name: o.name }).then(function () { return load(true, id, true).catch(function () {}); }); }
       };
     }
   };
@@ -559,6 +627,13 @@ html:not(.shop-sky) .shopsky .sky i { animation-play-state: paused; }
 /* nothing shows over the opening itself; and both notices go by themselves once the giveaway time has passed */
 .view[data-view="home"]:has(.hero .stage.gated, .hero .stage.intro) .giveaway-bar { display: none; }
 html.giveaway-over .giveaway-bar, html.giveaway-over .giveaway { display: none; }
+/* the cookie notice: a small card at the bottom left (full width on a phone), shown once the opening is over; "Got it" keeps it away */
+#cookie-note { position: fixed; left: 12px; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); z-index: 45; box-sizing: border-box; width: min(520px, calc(100% - 24px)); display: flex; gap: 12px; align-items: center; padding: 12px 14px; background: #FFFEFB; color: #1d1d1b; border: 1px solid rgba(0, 0, 0, .2); border-radius: 12px; box-shadow: 0 8px 28px rgba(0, 0, 0, .25); font: 13px/1.4 var(--f-body, system-ui, sans-serif); }
+#cookie-note p { margin: 0; flex: 1; }
+#cookie-note a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+#cookie-note button { flex: none; padding: 9px 16px; border-radius: 99px; border: 1px solid #1d1d1b; background: #1d1d1b; color: #FBFAF6; font: 600 13px/1 var(--f-body, system-ui, sans-serif); cursor: pointer; }
+#cookie-note button:focus-visible, #cookie-note a:focus-visible { outline: 2px solid #7A5A00; outline-offset: 2px; }
+@media (max-width: 620px) { #cookie-note { right: 12px; width: auto; flex-direction: column; align-items: stretch; gap: 10px; } #cookie-note button { width: 100%; padding: 11px 16px; } html.cookie-open .sound-btn { bottom: calc(24px + var(--cn-h, 0px) + env(safe-area-inset-bottom, 0px)); } }
 .board { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .board th { padding: 10px 14px; text-align: left; font-size: 12px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
 .board td { padding: 11px 14px; border-top: 1px solid var(--line); }
@@ -769,10 +844,10 @@ p { margin: 0; }
 @container (max-width: 639.98px) { .menu-home .nc-ref { --mt: calc(10px + var(--lw) * .953 + 8px); } }
 @media (max-height: 520px) { .menu-home .nc-ref { --mb: 78px; --mg0: 8px; } }
 .menu-home .nc a > i, .menu-home .nc a > svg, .menu-home .nc > .mx-rope { display: none; }
-.menu-home .nc .w-about { --i: 0; --tilt0: -2.4deg; --r0: -11deg; --zx0: -.10; --zy0: -.03; --cy: .067; --tr: -3deg;  --tx: 50%; }
-.menu-home .nc .w-work  { --i: 1; --tilt0: 1.8deg;  --r0: 13deg;  --zx0: .12;  --zy0: .05;  --cy: 0;    --tr: -38deg; --tx: 8%; }
-.menu-home .nc .w-shop  { --i: 2; --tilt0: -1.4deg; --r0: -9deg;  --zx0: -.06; --zy0: -.02; --cy: .079; --tr: 34deg;  --tx: 92%; }
-.menu-home .nc .w-play  { --i: 3; --tilt0: 2.6deg;  --r0: 12deg;  --zx0: .08;  --zy0: .03;  --cy: .039; --tr: -5deg;  --tx: 67%; --ox: 67.5%; --oy: 32%; }
+.menu-home .nc .w-about { --i: 3; --tilt0: -2.4deg; --r0: -11deg; --zx0: -.10; --zy0: -.03; --cy: .067; --tr: -3deg;  --tx: 50%; }
+.menu-home .nc .w-work  { --i: 0; --tilt0: 1.8deg;  --r0: 13deg;  --zx0: .12;  --zy0: .05;  --cy: 0;    --tr: -38deg; --tx: 8%; }
+.menu-home .nc .w-shop  { --i: 1; --tilt0: -1.4deg; --r0: -9deg;  --zx0: -.06; --zy0: -.02; --cy: .079; --tr: 34deg;  --tx: 92%; }
+.menu-home .nc .w-play  { --i: 2; --tilt0: 2.6deg;  --r0: 12deg;  --zx0: .08;  --zy0: .03;  --cy: .039; --tr: -5deg;  --tx: 67%; --ox: 67.5%; --oy: 32%; }
 .menu-home .nc a { --t: calc(var(--d0, 0) + var(--i) * var(--step, 0)); }
 
 /* the looks */
@@ -3334,7 +3409,7 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
   SITE.navHTML = home => home ?
     `<nav class="menu menu-home" aria-label="Main">` +
       `<div class="nc-ref" aria-hidden="true"></div>` +
-      `<div class="nav nc">${MXROPE}${homeLink('about')}${WKD ? '' : homeLink('work')}${homeLink('shop')}${homeLink('play')}</div>` +
+      `<div class="nav nc">${MXROPE}${WKD ? '' : homeLink('work')}${homeLink('shop')}${homeLink('play')}${homeLink('about')}</div>` +
       `<div class="nav nr">${navLink('cart', 'cart', 'Cart')}<span class="cnt" aria-hidden="true">(0)</span></div>` +
     `</nav>` :
     `<nav class="menu" aria-label="Main">` +
@@ -5125,6 +5200,7 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
   /* the Work page as a wall (choice "Wall"): every piece's picture on one wall, the name above it and a button to open the piece */
   /* the Open button on the Work wall: now and then it crackles, like the clothesline on Home, and when it is touched it throws a flurry of sparks (the same gold sparks, about a third in colour) */
   function wallSparks(box) {
+    return () => {};                                    // switched off: no sparks on the Work page (delete this line to bring them back)
     const a = box.querySelector('.wall-open a'), host = box.querySelector('.wall-open');
     if (!a || !host || RM.matches || !host.animate) return () => {};
     const lay = document.createElement('span'); lay.className = 'wsp'; lay.setAttribute('aria-hidden', 'true'); host.appendChild(lay);
@@ -5711,14 +5787,16 @@ void main() {
 <li><strong>When you email me.</strong> Your email address and what you write. I use them to reply. I keep the conversation for as long as it is useful, or for as long as the law asks if it is about an order.</li>
 <li><strong>When you ask me to tell you something</strong> (when an original goes on sale, when the animations are up, or if I start framing). Your email address and what you asked about. I use them only to send you that message, then I delete them, or sooner if you ask. The list is kept privately and only I can see it.</li>
 <li><strong>When you save a score in the game.</strong> The name you type and your score. They appear on the public High scores board, so use a nickname if you would rather not use your own. Your browser also keeps a random code that lets you update your own entry and no one else’s; it is not linked to anything else. Email me and I’ll remove your entry.</li>
+<li><strong>When you visit.</strong> I count visits with Vercel Web Analytics. It sets no cookies and does not follow you from site to site. It records which page or artwork was looked at, the country you are in, your type of device and browser, and which site sent you here. Nothing in it says who you are, and only I can see the totals.</li>
+<li><strong>When the site crashes or runs far too slowly on your phone.</strong> A short, anonymous note is sent: your phone’s browser and system version, its screen size and what the page was doing just before it stopped. Nothing in it says who you are, and I keep only the latest sixty. I use it to find and fix the problem.</li>
 </ul>
-<p>My reasons in law: to carry out the order you made; to keep records the law requires; your agreement, for the “tell me” sign-ups (you can take it back at any time); and my legitimate interest in answering your messages and keeping the High scores board running.</p>
+<p>My reasons in law: to carry out the order you made; to keep records the law requires; your agreement, for the “tell me” sign-ups (you can take it back at any time); and my legitimate interest in answering your messages, keeping the High scores board running and knowing how many people look at the work.</p>
 <h2>Cookies and what your browser keeps</h2>
-<p>I don’t use advertising or tracking cookies, and I don’t run analytics. The site keeps a few small things on your own device so that it works: what is in your cart, your chosen delivery speed, the name you last used on the High scores board and the scores you have saved from this device, the random code mentioned above, and your sound on or off choice. The Play page also keeps a copy of the game’s music so that it starts faster next time. None of it is sent to anyone for advertising, and clearing your browser’s site data removes it.</p>
+<p>I don’t use advertising or tracking cookies. The visit counter above works without cookies. The site keeps a few small things on your own device so that it works: what is in your cart, your chosen delivery speed, the name you last used on the High scores board and the scores you have saved from this device, the random code mentioned above, your sound on or off choice and, if the site has struggled on your phone, a note to give it the lighter version. The Play page also keeps a copy of the game’s music so that it starts faster next time. None of it is sent to anyone for advertising, and clearing your browser’s site data removes it.</p>
 <h2>Who else handles your details</h2>
 <ul>
 <li><strong>PayPal</strong> takes payments, and sees whatever you give it. <a href="https://www.paypal.com/uk/legalhub/paypal/privacy-full" rel="noopener">Its privacy statement</a> explains how it uses that.</li>
-<li><strong>Vercel</strong> hosts this website and keeps the High scores and sign-up lists. Like any web host, it sees the technical details of each visit, such as your IP address.</li>
+<li><strong>Vercel</strong> hosts this website, keeps the High scores and sign-up lists, and counts visits for me. Like any web host, it sees the technical details of each visit, such as your IP address.</li>
 <li><strong>Google Fonts</strong> supplies the lettering. Opening a page asks Google to send the fonts, which tells Google your IP address.</li>
 <li><strong>Apple (iCloud Mail)</strong> carries my email.</li>
 <li><strong>Royal Mail or another carrier</strong> is given your name and address to deliver your parcel.</li>
@@ -5726,7 +5804,7 @@ void main() {
 <p>Some of these are based outside the UK, in the USA in particular. Where that is so, they rely on the safeguards UK law provides for sending data abroad.</p>
 <h2>Your rights</h2>
 <p>You can ask to see what I hold about you, to correct it, to have it deleted, or to object to how I use it. Email me and I’ll deal with it, normally within a month. If you are unhappy with how I have handled your details you can complain to the Information Commissioner’s Office at <a href="https://ico.org.uk" rel="noopener">ico.org.uk</a> (0303 123 1113), though I’d like the chance to put it right first.</p>
-<p class="small muted">Last updated 7 November 2026.</p>
+<p class="small muted">Last updated 8 November 2026.</p>
 `;
   const TERMS_HTML = `
 <p class="lede">These are the terms for buying from this site and for using it. They go together with <a href="#shipping">Shipping</a> and <a href="#returns">Returns and refunds</a>, and with the <a href="#privacy">Privacy</a> page.</p>
@@ -5930,7 +6008,7 @@ void main() {
   let px = W / 2, target = W / 2, score = 0, lives = LIVES, spawnIn = 0, best = 0, dirty = true;
   let drops = [], rings = [], eaten = [], bite = null;               // eaten: drops on their way down the mouth; bite: when the jaws last started to open
   let run = 0, runId = 0, newBest = false;                 // the game that just ended, and whether it beat this browser's best
-  let saved = false, saving = false, savedKind = '', keptBest = 0;
+  let saved = false, saving = false, savedKind = '', keptBest = 0, keptRenamed = false, keptName = '';
   const keys = { left: false, right: false };
   try { best = +localStorage.getItem(BEST_KEY) || 0; } catch (e) {}
 
@@ -6264,13 +6342,14 @@ void main() {
     $('#sc-box').setAttribute('aria-busy', String(wait));
   }
 
-  async function writeShared(name, sc) {                   // one row per player; it only ever goes up
+  const sameName = (a, b) => String(a).toLowerCase().replace(/\s+/g, ' ').trim() === String(b).toLowerCase().replace(/\s+/g, ' ').trim();
+  async function writeShared(name, sc) {                   // one row per name on the board, whichever phone it was played on; it only ever goes up
     const ref = db.collection(COL).doc(uid);
     const attempt = async () => {
-      const cur = await ref.get(), old = cur.exists ? cur.data() : null;
+      const cur = await ref.get(name), old = cur.exists ? cur.data() : null;   // the board's row for this name, else this phone's own
       if (!old || !Number.isInteger(old.score) || sc > old.score) { await ref.set({ name, score: sc, at: Date.now() }); return 'shared'; }
-      if (old.name !== name) await ref.update({ name });
-      keptBest = old.score;
+      keptRenamed = false; keptName = old.name; keptBest = old.score;
+      if (!sameName(old.name, name)) { await ref.update({ name }); keptRenamed = true; keptName = name; }
       return 'kept';
     };
     try { return await attempt(); }
@@ -6285,7 +6364,7 @@ void main() {
       const i = rows.slice(0, TOP).findIndex(r => r.id === uid);
       return i < 0 ? 'Saved to the leaderboard.' : 'Saved. You are number ' + (i + 1) + ' on the leaderboard.';
     }
-    if (savedKind === 'kept') return 'Name saved. Your best on the leaderboard stays at ' + keptBest + '.';
+    if (savedKind === 'kept') return keptRenamed ? 'Name updated. Your best on the leaderboard stays at ' + keptBest + '.' : 'Not a new best: the leaderboard already has ' + keptName + ' on ' + keptBest + '. Beat it to move up.';
     if (savedKind === 'readonly') return 'This link can only read the shared board, so your score is saved on this device.';
     return 'Saved on this device.';
   }
@@ -10038,5 +10117,37 @@ html.mxw-hair .menu-home .nc .w.w-play::after { background-image: url("media/sit
 </script>
 
 
+<script id="visit-count">
+/* A private visit counter: Vercel Web Analytics. No cookies and no personal tracking; the totals are only visible to the owner, in her Vercel dashboard. It starts a couple of seconds after the page has finished loading
+   (so it never slows the opening), counts each section and each artwork as its own page, and stays off in any browser that has opened /?notme (the owner's own; /?notme=0 turns it back on). */
+(function () {
+  try {
+    var q = location.search;
+    if (/[?&]notme=0(&|$)/.test(q)) localStorage.removeItem('appl-notme');
+    else if (/[?&]notme(=1)?(&|$)/.test(q)) localStorage.setItem('appl-notme', '1');
+    if (localStorage.getItem('appl-notme')) return;
+  } catch (e) {}
+  if (!/^https?:$/.test(location.protocol)) return;
+  window.va = window.va || function () { (window.vaq = window.vaq || []).push([].slice.call(arguments)); };
+  var last = null;
+  function page() {
+    var h = ''; try { h = decodeURIComponent(location.hash || ''); } catch (e) { h = location.hash || ''; }
+    var path = '/' + h.replace(/^#\/?/, '').replace(/[^\w\-\/.]/g, '').slice(0, 60);
+    if (path === last) return; last = path;
+    try { window.va('pageview', { route: path, path: path }); } catch (e) {}
+  }
+  function start() {
+    try {
+      var s = document.createElement('script');
+      s.defer = true; s.src = '/_vercel/insights/script.js'; s.setAttribute('data-disable-auto-track', '1');
+      s.onerror = function () {};
+      document.head.appendChild(s);
+      page(); window.addEventListener('hashchange', page);
+    } catch (e) {}
+  }
+  if (document.readyState === 'complete') setTimeout(start, 2500);
+  else window.addEventListener('load', function () { setTimeout(start, 2500); });
+})();
+</script>
 </body>
 </html>
