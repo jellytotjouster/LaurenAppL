@@ -64,6 +64,47 @@ function oneRowPerName(all, me) {                                   // all: best
   return out;
 }
 
+/* ---------- proof that a game was played ---------- */
+/* A score is only accepted for a game the server saw begin. When a game starts, the page asks for a "run": a small signed note saying who started a game and when.
+   Saving a score hands that note back. The server checks the signature, that it is this player's own, that it has not been used before, and that the score is possible in the time that has passed
+   (a flawless player catches about 2.4 drops a second; the limit below is a good margin above that). It needs no storage, so it costs nothing. */
+const RUN_MAX_AGE = 6 * 3600e3;
+const runKey = () => { const k = process.env.ADMIN_KEY; return typeof k === 'string' && k.length >= 16 ? crypto.createHash('sha256').update('appl-run:' + k).digest() : null; };
+export function makeRun(pid, now = Date.now()) {
+  const key = runKey(); if (!key) return null;
+  const body = Buffer.from(JSON.stringify({ p: pid, t: now, n: crypto.randomBytes(6).toString('hex') })).toString('base64url');
+  return body + '.' + crypto.createHmac('sha256', key).update(body).digest('base64url');
+}
+export function readRun(token, pid, now = Date.now()) {
+  const key = runKey();
+  if (!key || typeof token !== 'string' || token.length > 400) return null;
+  const i = token.indexOf('.'); if (i < 1) return null;
+  const body = token.slice(0, i), sig = Buffer.from(token.slice(i + 1), 'base64url'), want = crypto.createHmac('sha256', key).update(body).digest();
+  if (sig.length !== want.length || !crypto.timingSafeEqual(sig, want)) return null;
+  let r; try { r = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')); } catch (e) { return null; }
+  if (!r || r.p !== pid || !Number.isFinite(r.t) || r.t > now + 10000 || now - r.t > RUN_MAX_AGE) return null;
+  return { t: r.t };
+}
+/* How many drops could be caught in this many seconds of play. The game starts dropping after half a second, then drops faster and faster until 45 catches.
+   jitter: 1 is the average timing; below 1 is luckier than anyone gets. fall: how long a drop takes to reach the mouth. */
+export function perfectCatches(secs, jitter = 1, fall = 1) {
+  let n = 0, t = 0.5;
+  while (t <= secs - fall && n < 20000) { n++; t += (0.95 - 0.55 * Math.min(1, n / 45)) * jitter; }
+  return n;
+}
+const capCatches = secs => Math.ceil(perfectCatches(secs + 2, 0.9, 0.5) * 1.05) + 3;
+const flawless = secs => perfectCatches(secs, 1, 2);                     // about what a (near) flawless player reaches: 108 after 60 seconds, 257 after two minutes
+export const looksOff = (score, secs) => score >= 150 || (secs >= 90 && score >= 0.85 * flawless(secs));
+const starts = new Map();
+function startsTooMany(ip, now) {
+  if (!ip) return false;
+  const a = (starts.get(ip) || []).filter(t => now - t < 3600e3);
+  if (a.length >= 300) { starts.set(ip, a); return true; }
+  a.push(now); starts.set(ip, a);
+  if (starts.size > 2000) starts.clear();
+  return false;
+}
+
 /* ---------- high scores ---------- */
 /* The free storage plan allows 10,000 reads a month, so the board is remembered for a few seconds on each warm server: any number of people watching it (each open board asks every 20 seconds)
    costs at most one read every few seconds. A player's own save asks for a fresh read, and every save or removal makes the server forget what it remembered. */
@@ -94,29 +135,43 @@ export async function scoresGet(store, me, fresh = false, now = Date.now()) {
   return json(200, { rows: merged.slice(0, TOP_SCORES), mine: hit ? { ...hit, own: own.score } : null });
 }
 
-export async function scoresPost(store, body, now = Date.now()) {
+export async function scoresPost(store, body, now = Date.now(), ip = '') {
   if (!body || typeof body !== 'object') return json(400, { error: 'bad' });
   if (typeof body.secret !== 'string' || !SECRET_RE.test(body.secret)) return json(400, { error: 'bad' });
+  const id = pidOf(body.secret);
+  if (body.action === 'start') {                                                              // a game is starting: hand out the proof
+    if (!runKey()) return json(503, { error: 'not set up' });
+    if (startsTooMany(ip, now)) return json(429, { error: 'slow' });
+    return json(200, { ok: true, run: makeRun(id, now) });
+  }
   const name = cleanName(body.name);
   if (!name) return json(400, { error: 'name' });
   const hasScore = body.score !== undefined && body.score !== null;
   const score = hasScore ? body.score : null;
   if (hasScore && (!Number.isInteger(score) || score < 1 || score > SCORE_MAX)) return json(400, { error: 'score' });
-  const id = pidOf(body.secret);
+  let runT = 0, runSecs = 0;
+  if (hasScore) {                                                                              // a score must come with the proof of a game that really started, and be possible in that time
+    const r = readRun(body.run, id, now);
+    if (!r) return json(422, { error: 'run' });
+    runSecs = Math.max(0, (now - r.t) / 1000); runT = r.t;
+    if (score > capCatches(runSecs)) return json(422, { error: 'fast' });
+  }
   const out = await update(store, 'data/scores.json', data => {
     const rows = (data && Array.isArray(data.rows) ? data.rows : []).filter(validRow);
     const hit = rows.find(r => r.id === id);
     if (hit && hit.touched && now - hit.touched < 1200) return { out: { rate: true } };       // one save at a time per player
     if (!hasScore && !hit) return { out: { missing: true } };
+    if (hasScore && hit && runT <= (hit.run || 0)) return { out: { used: true } };            // that game has already been saved
     let kind;
-    if (!hit) { rows.push({ id, name, score, at: now, touched: now }); kind = 'shared'; }
-    else if (hasScore && score > hit.score) { hit.name = name; hit.score = score; hit.at = now; hit.touched = now; kind = 'shared'; }
-    else { hit.name = name; hit.touched = now; kind = 'kept'; }
+    if (!hit) { rows.push({ id, name, score, at: now, touched: now, run: runT, secs: Math.round(runSecs) }); kind = 'shared'; }
+    else if (hasScore && score > hit.score) { hit.name = name; hit.score = score; hit.at = now; hit.touched = now; hit.run = runT; hit.secs = Math.round(runSecs); kind = 'shared'; }
+    else { hit.name = name; hit.touched = now; if (hasScore) hit.run = runT; kind = 'kept'; }
     rows.sort(byRank);
     return { next: { rows: rows.slice(0, KEEP_SCORES) }, out: { kind, best: (rows.find(r => r.id === id) || {}).score || 0 } };
   });
   if (out.rate) return json(429, { error: 'slow' });
   if (out.missing) return json(404, { error: 'none' });
+  if (out.used) return json(422, { error: 'used' });
   forgetBoard();
   return json(200, { ok: true, kind: out.kind, best: out.best, id });
 }
@@ -203,7 +258,7 @@ export async function adminPost(store, body) {
   if (act === 'list') {
     const [s, n, rp] = await Promise.all([store.read('data/scores.json'), store.read('data/notify.json'), store.read('data/reports.json')]);
     const subs = Object.values(n.data && n.data.subs || {}).filter(x => x && typeof x.email === 'string').map(x => ({ email: x.email, topics: x.topics || {}, at: x.at || 0 }));
-    const scores = (s.data && Array.isArray(s.data.rows) ? s.data.rows : []).filter(validRow).sort(byRank).map(pub);
+    const scores = (s.data && Array.isArray(s.data.rows) ? s.data.rows : []).filter(validRow).sort(byRank).map(r => { const secs = Number.isFinite(r.secs) ? r.secs : 0; return { ...pub(r), secs, by: r.by === 'owner' ? 'owner' : '', flawless: secs ? flawless(secs) : 0, look: !!(secs || r.score >= 150) && looksOff(r.score, secs) }; });
     const reports = (rp.data && Array.isArray(rp.data.list) ? rp.data.list : []).filter(r => r && Number.isFinite(r.at) && Array.isArray(r.ev));
     return json(200, { subs, scores, reports });
   }
@@ -218,6 +273,18 @@ export async function adminPost(store, body) {
       delete cur.topics[body.topic]; if (!Object.keys(cur.topics).length) delete subs[k];
       return { next: { subs }, out: 1 };
     });
+    return json(200, { ok: true });
+  }
+  if (act === 'addScore') {                                                                    // the owner adds a score she has checked herself (for example to restore one that never reached the board)
+    const name = cleanName(body.name), score = body.score;
+    if (!name || !Number.isInteger(score) || score < 1 || score > SCORE_MAX) return json(400, { error: 'bad' });
+    const now = Date.now(), id = pidOf('owner-added-' + crypto.randomBytes(12).toString('hex'));
+    await update(store, 'data/scores.json', d => {
+      const rows = (d && Array.isArray(d.rows) ? d.rows : []).filter(validRow);
+      rows.push({ id, name, score, at: now, touched: 0, run: 0, secs: 0, by: 'owner' }); rows.sort(byRank);
+      return { next: { rows: rows.slice(0, KEEP_SCORES) }, out: 1 };
+    });
+    forgetBoard();
     return json(200, { ok: true });
   }
   if (act === 'removeScore' && typeof body.id === 'string') {
@@ -271,7 +338,11 @@ export async function guarded(req, res, run) {
     return reply(res, await run());
   } catch (e) {
     const status = e && e.status || 500;
-    if (status === 500) console.error(e);
+    if (status === 500) {
+      const name = String(e && e.name || ''), msg = String(e && e.message || '').replace(/\s+/g, ' ').slice(0, 300);
+      console.error('[appl] ' + req.method + ' ' + String(req.url || '').split('?')[0] + ' failed: ' + name + ': ' + msg);   // this is the line to look for in the Vercel Logs
+      if (/^Blob/.test(name) || /blob|store|quota|limit|suspend|token/i.test(msg)) return reply(res, json(503, { error: 'storage' }));   // the score store itself is unavailable (for example a free-plan limit)
+    }
     return reply(res, json(status, { error: status === 500 ? 'server' : 'bad' }));
   }
 }

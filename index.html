@@ -33,7 +33,7 @@
   function show() {
     if (el || !document.body) return;
     el = document.createElement('div'); el.id = 'cookie-note'; el.setAttribute('role', 'region'); el.setAttribute('aria-label', 'Cookies');
-    el.innerHTML = '<p>I don’t use tracking or advertising cookies, and I count visits without any. The site keeps a few small things on your device so it works: your cart, your game scores, your settings and, if your phone struggles, a note to give it the lighter version. <a href="#privacy">More in Privacy</a>.</p><button type="button">Got it</button>';
+    el.innerHTML = '<p><span class="cn-long">I don’t use tracking or advertising cookies, and I count visits without any. The site keeps a few small things on your device so it works: your cart, your game scores, your settings and, if your phone struggles, a note to give it the lighter version. <a href="#privacy">More in Privacy</a>.</span><span class="cn-short">No tracking cookies. Just a few small things so the site works. <a href="#privacy">Privacy</a></span></p><button type="button">Got it</button>';
     el.querySelector('button').addEventListener('click', function () {
       try { window.localStorage.setItem(KEY, '1'); } catch (e) {}
       el.remove(); el = null; document.documentElement.classList.remove('cookie-open'); document.documentElement.style.removeProperty('--cn-h');
@@ -305,12 +305,12 @@
     catch (e) { return mem || (mem = hex(crypto.getRandomValues(new Uint8Array(24)))); }
   }
   function pid() { return crypto.subtle.digest('SHA-256', new TextEncoder().encode('appl-player:' + secret())).then(function (b) { return hex(new Uint8Array(b)).slice(0, 20); }); }
-  function fail(status) { var e = new Error('api ' + status); e.code = status === 400 ? 'invalid_argument' : status === 404 ? 'not_found' : 'unavailable'; return e; }
+  function fail(status, reason) { var e = new Error('api ' + status); e.status = status; e.reason = reason || ''; e.code = status === 400 ? 'invalid_argument' : status === 404 ? 'not_found' : status === 422 ? 'rejected' : 'unavailable'; return e; }
   function call(path, body) {
     var o = body === undefined ? { cache: 'no-store' } : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) };
-    return fetch(API + path, o).then(function (r) { if (!r.ok) throw fail(r.status); return r.json(); }, function () { throw fail(0); });
+    return fetch(API + path, o).then(function (r) { if (!r.ok) return r.json().then(function (b) { return b; }, function () { return {}; }).then(function (b) { throw fail(r.status, b && b.error); }); return r.json(); }, function () { throw fail(0); });
   }
-  var listeners = [], rows = [], last = 0, busy = null, mine = null;
+  var listeners = [], rows = [], last = 0, busy = null, mine = null, lastFailed = false;
   function emit() {
     var snap = { docs: rows.map(function (r) { return { id: r.id, data: function () { return { name: r.name, score: r.score, at: r.at }; } }; }) };
     listeners.forEach(function (l) { l.ok(snap); });
@@ -318,8 +318,8 @@
   function load(force, me, fresh) {                     // fresh: ask the server to read the storage again (after this player's own save), not use what it remembers
     if (!force && (busy || Date.now() - last < 15000)) return busy || Promise.resolve();
     var p = (me ? Promise.resolve(me) : pid().catch(function () { return ''; })).then(function (id) { return call('scores' + (id ? '?me=' + id : '') + (fresh ? (id ? '&' : '?') + 'fresh=1' : '')); })
-      .then(function (j) { rows = j.rows || []; mine = j.mine || null; last = Date.now(); emit(); },
-            function (e) { listeners.forEach(function (l) { if (l.err) l.err(e); }); throw e; });
+      .then(function (j) { rows = j.rows || []; mine = j.mine || null; last = Date.now(); lastFailed = false; emit(); },
+            function (e) { lastFailed = true; listeners.forEach(function (l) { if (l.err) l.err(e); }); throw e; });
     busy = p.then(function () { busy = null; }, function () { busy = null; });
     return p;
   }
@@ -332,12 +332,14 @@
   var lastAct = Date.now();
   ['pointerdown', 'keydown', 'touchstart', 'scroll', 'mousemove'].forEach(function (ev) { window.addEventListener(ev, function () { lastAct = Date.now(); }, { passive: true, capture: true }); });
   setInterval(function () {
-    if (!listeners.length || document.visibilityState !== 'visible' || !/^#scores(\/|$)/.test(location.hash) || Date.now() - lastAct > 15 * 60000) return;
-    load(true).catch(function () {});
+    if (!listeners.length || document.visibilityState !== 'visible' || Date.now() - lastAct > 15 * 60000) return;
+    if (/^#scores(\/|$)/.test(location.hash) || (lastFailed && /^#play(\/|$)/.test(location.hash))) load(true).catch(function () {});     // the board page keeps up; the game page only tries again after a failure
   }, 20000);
 
   var rowsApi = {
     orderBy: function () { return rowsApi; }, limit: function () { return rowsApi; },
+    mine: function () { return mine; },                  // this player's own name on the board, from the latest load (own = this phone's own best)
+    startRun: function () { return call('scores', { action: 'start', secret: secret() }).then(function (j) { return j.run; }); },     // a signed note that a game has started; a score is only accepted with one
     onSnapshot: function (ok, err) {
       var l = { ok: ok, err: err }; listeners.push(l);
       if (onBoardPage()) load(true).catch(function () {});
@@ -353,7 +355,7 @@
             return { exists: !!hit, data: function () { return hit ? { name: hit.name, score: hit.score, at: hit.at } : null; } };
           });
         },
-        set: function (o) { return call('scores', { secret: secret(), name: o.name, score: o.score }).then(function () { return load(true, id, true).catch(function () {}); }); },
+        set: function (o) { return call('scores', { secret: secret(), name: o.name, score: o.score, run: o.run }).then(function () { return load(true, id, true).catch(function () {}); }); },
         update: function (o) { return call('scores', { secret: secret(), name: o.name }).then(function () { return load(true, id, true).catch(function () {}); }); }
       };
     }
@@ -633,7 +635,8 @@ html.giveaway-over .giveaway-bar, html.giveaway-over .giveaway { display: none; 
 #cookie-note a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
 #cookie-note button { flex: none; padding: 9px 16px; border-radius: 99px; border: 1px solid #1d1d1b; background: #1d1d1b; color: #FBFAF6; font: 600 13px/1 var(--f-body, system-ui, sans-serif); cursor: pointer; }
 #cookie-note button:focus-visible, #cookie-note a:focus-visible { outline: 2px solid #7A5A00; outline-offset: 2px; }
-@media (max-width: 620px) { #cookie-note { right: 12px; width: auto; flex-direction: column; align-items: stretch; gap: 10px; } #cookie-note button { width: 100%; padding: 11px 16px; } html.cookie-open .sound-btn { bottom: calc(24px + var(--cn-h, 0px) + env(safe-area-inset-bottom, 0px)); } }
+#cookie-note .cn-short { display: none; }
+@media (max-width: 620px) { #cookie-note { left: 8px; right: 8px; bottom: calc(8px + env(safe-area-inset-bottom, 0px)); width: auto; gap: 10px; padding: 7px 8px 7px 12px; border-radius: 10px; font-size: 12px; line-height: 1.3; box-shadow: 0 4px 16px rgba(0, 0, 0, .22); } #cookie-note .cn-long { display: none; } #cookie-note .cn-short { display: inline; } #cookie-note button { padding: 9px 14px; font-size: 12px; } html.cookie-open .sound-btn { bottom: calc(16px + var(--cn-h, 0px) + env(safe-area-inset-bottom, 0px)); } }
 .board { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .board th { padding: 10px 14px; text-align: left; font-size: 12px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
 .board td { padding: 11px 14px; border-top: 1px solid var(--line); }
@@ -733,8 +736,10 @@ p { margin: 0; }
 }
 
 /* Home: the opening, then the paper */
-.hero .stage { aspect-ratio: auto; --sh: clamp(440px, 100vh, 860px); height: var(--sh); border: 0; border-radius: 0; }
-@supports (height: 100svh) { .hero .stage { --sh: clamp(440px, 100svh, 860px); } }
+/* The scene is as tall as the window, but between 440 and 860 px. On a window taller than about 1040 px (a portrait monitor, a big screen) it grows to fill what is left once the giveaway bar (62 px) and the footer (115 px)
+   are counted, so the page ends at the bottom of the window and there is no blank paper under the footer. --sh stays as it was: it sizes the paper signs, so the lettering does not grow with the height. */
+.hero .stage { aspect-ratio: auto; --sh: clamp(440px, 100vh, 860px); height: max(var(--sh), calc(100vh - 177px)); border: 0; border-radius: 0; }
+@supports (height: 100svh) { .hero .stage { --sh: clamp(440px, 100svh, 860px); height: max(var(--sh), calc(100svh - 177px)); } }
 .stage .skip { position: absolute; z-index: 6; font: 600 14px/1 var(--f-body); letter-spacing: .04em; color: var(--si); background: rgba(251, 250, 246, .78); border: 1px solid var(--sl); border-radius: 99px; padding: 11px 18px; cursor: pointer; }
 .stage .skip { left: 16px; bottom: 16px; display: none; }
 .stage .flash { position: absolute; inset: 0; z-index: 5; pointer-events: none; opacity: 0; background: radial-gradient(ellipse 85% 70% at 50% 40%, #fff 0%, #f3f7ff 42%, #d6e1f7 100%); }   /* the lightning: lights the whole sky at once, twice, and is gone */
@@ -1615,7 +1620,7 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
       <div class="wsky" aria-hidden="true"></div>
       <div class="scene" id="whip-scene" role="img" aria-label="A marker-ink drawing. Layered blue, teal and navy waves fill the bottom of the page, carrying a long green creature with a red belly, a dark green fish with three round red eyes, and a small toothy creature whose long tail of purple beads rises into the sky and curls over. Tap the picture and the tail cracks like a whip.">
         <img class="sea-x l" src="media/site/sea-l.webp" width="2697" height="759" alt="" loading="lazy" decoding="async"><img class="sea-x r" src="media/site/sea-r.webp" width="2697" height="759" alt="" loading="lazy" decoding="async">
-        <img class="sea" src="media/site/sea.webp" style="left:0.000%;top:45.987%;width:100.000%" width="1798" height="759" alt="" decoding="async">
+        <img loading="lazy" class="sea" src="media/site/sea.webp" style="left:0.000%;top:45.987%;width:100.000%" width="1798" height="759" alt="" decoding="async">
         <img class="bd" data-i="12" src="data:image/webp;base64,UklGRkYDAABXRUJQVlA4WAoAAAAQAAAAJwAAKQAAQUxQSDsCAAARkHbbtunI6vOcpKpt27Zt27bd/cm2bdu2bds24sd7ood7UxHByG0bR1kLyU47pfzBloAfFauITxZPxYQUpTvVTUwu2pFpwNGnJ5ulpElJVWv0Ha/qOdgqFZmoVC13vxURoN+76ziJSNR8/y8VAEB7Py4LRULdE/8RQDAIELjWLzWDbVyB5S4dESHfja4ZWMxFJmOvW5qOqEP+Mz3zJcISla7rKXcUg8B1bX6DeAqDJN3Ou/VrxlD6cahOCs4y4Eud8OoxC5H74IBSiaxeyD7ig2bAdNH1eHlVh2nIZB10TYpiLfnj6pKmStzuok8HRqB+XVDaabJWcsUvpAdn8fPyMoIh69JPfiFHwJXybFha/ZK9yhUxsoYt5Nrf0KmviN5v1Qj40r6vy0FH5Si35z8iMVBvl+d0LvHAN1qQyL3vnZLSXWv/jMiC4FuRU/fLtnumAZCYsiWv3to8EBGJQFyfW28Ntt52ET36bVQ63TKdq97QWxoQXLtf3W7I5kQldiqADfIcKWisUTrzlD8IcHGf75bEJFWdNW+IAFiA61TX6L7RZZrxSsbKfM13ultGxrzgSs97owBYIn060yUDa1FyjhKzXquWlSk+mFQrpXWfEQpPfm8aAij/r4/IxeP0DnvhhW8kBKA/oUlvN3fPyeO1IqHs3Lt/FA0AkOp5dX1upeQsbmtzFOiw+sort+j9cH1P3wb5nRRBg47LXq7n0g2rhlTOl4gl7OU0lyJH7pxpBCYWE4SmacqWcJ8NAFZQOCDkAAAAMAYAnQEqKAAqAD49GotDoiGhFxwEzCADxLOAZZYa2JWYwnhXNFRQkK7m3PuHYoFzVsiv8TgVy9OzQAD++zWNiel5S159IOZ1iYwWcaMFWdlF5My5g6CosW/0wpzlgHsHzCp9Ms4VxAWk0ygA7I4Z/94O0gKopoVUIWg4zfuofopnDjiSvNyuDjmIDEQrfF5enAYueQqCVF1LFEvWn7roL9FRmQkmNMyg1kWcbdRQ3ga64lZk8rw5/2M941RmqE+vsJSeBVzqMOFz7Y8IkmeKztIxRFrZQVgrbJfuCfbjbZc10AAA" style="left:42.794%;top:31.759%;width:2.224%;transform-origin:27.97% 29.99%" width="40" height="42" alt="" decoding="async">
         <img class="bd" data-i="11" src="data:image/webp;base64,UklGRvYEAABXRUJQVlA4WAoAAAAQAAAANwAAOgAAQUxQSDIDAAARoL9tmxlL3lNVJekcn7Ft27Zt27Y9sxj9tLZt27Z3e3vZe2w1k9Rbq6ST6omICSBXXpokSmZtLRloWof5y9qpslGqN5529w8fb6wrF9VqNx++5+lCs/S+USlUIqV2z9XnH/dXWjCDN/dJlYamd15191clIRMAzNzL/TOYHHrj6fcEaiwAEALgOXev6J6leEdTB+19ptACIP4XMEs+v2lRS80rrcmIm/1VFiDsAR4veXtrK9UbX5f9zxYYAIRjgIc+3N5aox5ovc/7oxwQCQPRr68e31B1Te98wR8DIFwEojnPrOyQQd3RuxwLxAHhLsDL3704MZO54et26nsDEG4DPJr/5JwOqTQhrc+FgAEI9wHwmq+uH5VJE2BNr/LHAOEpgPift05o6HOWOvajKCC8Boycp3d00Z3QZieLOIT3gBX+7kx33Unjfb8ZMggARuDaLsyO+LrfWsRlEAKIfbY8zQFJW/ezJYcAL7m9DXOgLv7RghwCxjdzalMHc78wpEHN45Mz7Fj/BypkEeC559spNqTR0VwuDSJvzk63q73nLw5JBHjehXbUJntrwJIH0fenKTapE18IAZIIWD8sUm1Yy9NBLo2wflxsR1LHPB9PDtb0UD5HMpCUYe9EgGSgjc7lWElBtEmvhgBJ/Ct0J7TZsd8tSXjepbaqA5I68fkQIAMQ/XZDfeqAtTwV5DIAVs2Px5szByR11DNxCYDwDw9t7JpGnNImB/I4vAKiH+7pU0chzvWhb4UBb4DI19va+ChJkDY48FUU8AKIfXOkpUoSZ613fhwC3AOsnGvaM+Km2nrbB1HALYCXPzc9nbirtd76dQSASzz08rLGzCWitjj0VZgDbgDhD5c0UojrrOXGRwMGB5AIYPp31WHEQ6X+wONf51VbgDPAKrh3iEI8pSkd1p1+ttC08F8HxQ9Pr028VrObTb/7i2DYMAHgP4D55pw6zDNCaHrHkdvueOzd3MoY55wDZs7JFoxIyXz12nedfvK2D4I5OYUxXnxXH53IShnLaNJ1wd79By58U/XpsjQqzX+pmlG7Tt12Z7+4rislSagOOzotgyRlVos6SnJQRsmVE1ZQOCCeAQAAEAsAnQEqOAA7AD49GotDoiGhFgldmCADxLOAZIPrAe574cGWWxzYiBiGleM67qHCgmQGIDnsrSts9tqD+VXUMTuNVC6IQP3H4rb7kaM2V8M7WLhPHSmNP6OZGPfDk+2tgAD++ssnq2sghieDmYIdoj/cVjQ5XuUIsZDPsV60PU4d1H7DQp5jpegiY3gcWEjAr/MWGR7MbMrwjwrpY46Ri9bJXG/g7A3S3CdfUBQiYV79XGpOePWf/fHUJHrK3qeK+DBrCl1JA1+b2H1IKDqqPF8gf2ATcfLkZx33DFIDoUcHmeG3br1AgL4sqI3eMHBNQplRkeC+L9eDgeu4hmMlXqNON5jzaCkN9ZiTXPJbYGEaS/BVhy3uBnqWcaZGxXCwAqd2QZ4lJnumZn6WQAR1HgGjXn4Vpz5yjpxxYGWltdg316n7ZZh/BBbV3jb8axP04BcwKfhyF5z7zDSLFzq4/q9sbpVT2Y6KV81iBl1NZeCLv8g71CWZap9DrVeEvKhzIlY4hTHpegnrXyLyyIe4zN1NPyP1Tma/1GSJogAA" style="left:41.014%;top:29.425%;width:3.114%;transform-origin:25.28% 19.81%" width="56" height="59" alt="" decoding="async">
         <img class="bd" data-i="10" src="data:image/webp;base64,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" style="left:38.701%;top:25.270%;width:4.004%;transform-origin:26.13% 17.53%" width="72" height="84" alt="" decoding="async">
@@ -1638,7 +1643,7 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
     <section class="view" data-view="shop" hidden>
       <div class="pg shop-pg">
         <script>try { if (/^#shop(\/|$)/.test(location.hash) && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) document.currentScript.parentNode.classList.add('seq'); } catch (e) {}</script>
-        <div class="mon" id="mon"><div class="mon-glow" aria-hidden="true"><div class="gp"></div></div><img class="mon-photo" src="media/site/mon-photo.webp" width="1400" height="1329" alt="A flat monitor on a wall mount, with the conversation on its screen" decoding="async"><div class="mon-screen"><div class="talk" id="talk" role="group" aria-label="A conversation to open the shop">
+        <div class="mon" id="mon"><div class="mon-glow" aria-hidden="true"><div class="gp"></div></div><img loading="lazy" class="mon-photo" src="media/site/mon-photo.webp" width="1400" height="1329" alt="A flat monitor on a wall mount, with the conversation on its screen" decoding="async"><div class="mon-screen"><div class="talk" id="talk" role="group" aria-label="A conversation to open the shop">
           <p class="ln l has-parts"><span class="sr">“Wait, What on EARTH is that?”</span><i class="g gi-c-l1" aria-hidden="true"></i><span class="parts" aria-hidden="true"><i class="g gi-c-l1a"></i><i class="g gi-c-l1b"></i></span></p>
           <p class="ln r"><span class="sr">“What?”</span><i class="g gi-c-l2" aria-hidden="true"></i></p>
           <p class="ln l has-parts"><span class="sr">“The Weird Shit on your Wall!”</span><i class="g gi-c-l3" aria-hidden="true"></i><span class="parts" aria-hidden="true"><i class="g gi-c-l3a"></i><i class="g gi-c-l3b"></i></span></p>
@@ -1733,6 +1738,7 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
           <p class="empty" id="sc-empty">Loading the board…</p>
           <p class="muted small" id="sc-mine" hidden></p>
           <p class="muted small" id="sc-note"></p>
+          <p class="muted small" id="sc-rule">Scores are checked before the prize is given. Bots, scripts and edited game code are not allowed, and a score that comes from one is disqualified.</p>
           <div><button type="button" class="btn primary" id="sc-play">Play Drip Drip Drop</button></div>
         </div>
       </div>
@@ -1741,7 +1747,7 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
     <section class="view" data-view="about" hidden>
       <div class="pg">
         <div class="about">
-          <figure class="portrait"><img src="media/about/portrait.webp" alt="Lauren, with shoulder-length blonde hair and heart-shaped sunglasses tinted from pink to green, drinking from a silver can in front of a green hedge." width="900" height="1183" decoding="async"></figure>
+          <figure class="portrait"><img loading="lazy" src="media/about/portrait.webp" alt="Lauren, with shoulder-length blonde hair and heart-shaped sunglasses tinted from pink to green, drinking from a silver can in front of a green hedge." width="900" height="1183" decoding="async"></figure>
           <div class="stack">
             <header class="head"><p class="kicker">About</p><h1 tabindex="-1">About</h1></header>
             <p class="story">Well, I’m a bit of a bellend to be honest! I like making stuff though. My background is retail.</p>
@@ -4687,7 +4693,7 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
 
   /* ---------- sample stock ---------- */
   const SOLD = [9];
-  const WORKS = Array.from({ length: 12 }, (_, i) => ({ id: 'work-' + (i + 1), kind: 'work', n: i + 1, name: 'Artwork ' + pad(i + 1), sold: SOLD.includes(i + 1), mark: (i * 3 + 1) % NMARK, meta: 'Year · Medium · Size' }));
+  const WORKS = Array.from({ length: 13 }, (_, i) => ({ id: 'work-' + (i + 1), kind: 'work', n: i + 1, name: 'Artwork ' + pad(i + 1), sold: SOLD.includes(i + 1), mark: (i * 3 + 1) % NMARK, meta: 'Year · Medium · Size' }));
   /* the first work is real; the others are placeholders until their photos and titles arrive */
   Object.assign(WORKS[0], { name: 'Smooth seas don\u2019t make good sailors', img: 'media/seas/listing-thumb.webp', full: 'media/seas/listing.webp', alt: 'Smooth seas don\u2019t make good sailors, a marker-ink drawing: checkerboard clouds in black, white, orange and pink, a long chain of purple beads curling down into layered blue and teal waves, a long green creature, and a dark green fish with three round red eyes.' });
   /* the first work's listing: an A4 original (price in pounds, a first guess: set it with price:), prints A5 to A3; year still to add */
@@ -4820,6 +4826,25 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
       { src: 'media/alive/close-lollipops.webp', w: 1400, h: 1867, t: 'media/alive/close-lollipops-t.webp', cap: "Close up: two lollipops.", alt: "Close-up of two round lollipops on dark green stalks against a teal background: a larger red and pink one with a spiral and white stripes, and a smaller purple one with a red edge." },
       { src: 'media/alive/close-right.webp', w: 1400, h: 1867, t: 'media/alive/close-right-t.webp', cap: "Close up: the dripping tangle and the lollipops.", alt: "Close-up of the right half: a stained-glass tangle of green, purple and red shapes with black drips running down it and a black beaded rail across the top, beside three swirled lollipops on stalks." }],
     wall: WALL_ALIVE });
+  /* the thirteenth real work: Do you have a key?, an A5 drawing in Sharpie fineliner on sketch paper. Prints only (kept): the original is not for sale, so there is no price:.
+     Prints are the same three sizes as the other A5 works but priced \u00a33 below The Ponderer's (A6 12, A5 15, A4 25 pounds, against its 15, 18 and 28), because this is a drawing and not a painting; change them in prints: below.
+     One photo, so its screen wall moves the camera over it (media/key/flat.webp): the whole drawing, then four close-ups. */
+  const WALL_KEY = [
+    { t: 'media/key/flat.webp', cap: "The whole drawing, top to bottom", a: [0.5, 0.0, 1.0], b: [0.5, 1.0, 1.0] },
+    { t: 'media/key/flat.webp', cap: "Close up: the bubbles and the little mushrooms", a: [0.25, 0.22, 1.7], b: [0.6, 0.1, 1.7] },
+    { t: 'media/key/flat.webp', cap: "Close up: the flames and the face", a: [0.45, 0.35, 1.5], b: [0.55, 0.72, 1.5] },
+    { t: 'media/key/flat.webp', cap: "Close up: the chequered ribbon and the little figure", a: [0.1, 0.68, 1.7], b: [0.9, 0.78, 1.45] },
+    { t: 'media/key/flat.webp', cap: "Close up: the spikes", a: [0.3, 0.9, 1.6], b: [0.7, 1.0, 1.5] }
+  ];
+  Object.assign(WORKS[12], { name: 'Do you have a key?', year: '2026', kept: true,
+    prints: [['A6', '105 \u00d7 148 mm', 12], ['A5', '148 \u00d7 210 mm', 15], ['A4', '210 \u00d7 297 mm', 25]],
+    w: 1100, h: 1796, ar: 1100 / 1796, meta: 'Sharpie fineliner \u00b7 A5',
+    medium: 'Sharpie fineliner', size: 'A5 (148 \u00d7 210 mm)', support: 'Sketch paper',
+    about: 'An A5 original in Sharpie fineliner on sketch paper. The original is not for sale; prints are available in three sizes.',
+    img: 'media/key/listing-thumb.webp', full: 'media/key/listing.webp',
+    alt: 'Do you have a key?, a Sharpie fineliner drawing. A pink face with wide, bloodshot eyes and a clenched, grinning mouth sits under three tongues of orange flame, against a green shape, hatched blue sky and a black night sky of white stars, with purple bubbles and small mushrooms at the top. A black-and-white checkerboard ribbon curls across the bottom, below a small white figure at the left, over a yellow ground with dark cone-shaped spikes.',
+    media: [{ cap: 'The original, flat.', zoom: 'media/key/flat.webp' }],
+    wall: WALL_KEY });
   /* The Witch's screen wall: t is the picture (null = the listing photo); a and b are where the slow camera starts and ends, [x, y, zoom] with x and y 0..1 across the picture. */
   const WALL_WITCH = [
     { t: null, cap: "The whole drawing, top to bottom", a: [0.5, 0.0, 1.0], b: [0.5, 1.0, 1.0] },
@@ -4948,7 +4973,7 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
   /* ---------- the screen walls' pictures ----------
      The close-ups for the wall are not part of this page: they sit in media/data/<work>.js and are fetched when that work is opened (a tag is '@work:n').
      They stay as data inside those files, so the wall can always turn them into textures. */
-  const SLUGS = ['seas', 'moment', 'ponderer', 'unknown', 'doomscrolling', 'witch', 'algorithm', 'nibbler', 'tall', 'cat', 'eye', 'alive'];
+  const SLUGS = ['seas', 'moment', 'ponderer', 'unknown', 'doomscrolling', 'witch', 'algorithm', 'nibbler', 'tall', 'cat', 'eye', 'alive', 'key'];
   WORKS.forEach((w, i) => { if (SLUGS[i]) w.slug = SLUGS[i]; });
   const WALL_FILES = { witch: 'media/data/witch.js', moment: 'media/data/moment.js', seas: 'media/data/seas.js', algorithm: 'media/data/algorithm.js', doomscrolling: 'media/data/doomscrolling.js', ponderer: 'media/data/ponderer.js' };
   const WALL_DATA = (window.AppLData = window.AppLData || {}), WALL_P = {};
@@ -4978,7 +5003,7 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
   const FRAMES = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18], CW = ['n', 'g', 'r', 'n', 'p', 'y', 'k', 'n', 'g', 'p', 'r', 'n', 'y', 'k', 'g', 'n', 'p', 'r', 'k'], THICK = [2, 1, 3, 2, 1, 2, 3, 1, 2, 3, 1, 2, 1, 3, 2, 1, 3, 2, 1];
   function shopTile(it, i) {
     const [cat, label] = it.kept ? KIND.print : KIND[it.kind], pic = it.full || it.img;
-    const art = pic ? `<img class="art" src="${pic}" alt="${esc(it.alt || it.name)}" width="${it.w || 1400}" height="${it.h || 982}" decoding="async">`
+    const art = pic ? `<img loading="lazy" class="art" src="${pic}" alt="${esc(it.alt || it.name)}" width="${it.w || 1400}" height="${it.h || 982}" decoding="async">`
       : '';
     const status = it.kind === 'work' && !it.kept ? '<span class="chip">Available</span>' : '';
     const sh = SHAPES[(i * 4 + 3) % SHAPES.length], ar = pic ? (it.ar || 1400 / 982) : sh[0], w = pic ? 100 : sh[1], al = pic ? 'c' : sh[2];
@@ -5003,7 +5028,7 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
   const BUBBLES = 8;
   const CLOUD_ART = [{ k: 14, r: 0 }, { k: 11, r: -2, fl: 1 }, { k: 14, r: -4, fl: 1 }, { k: 2, r: 3 }, { k: 11, r: 2 }, { k: 14, r: 3 }, { k: 2, r: -3, fl: 1 }, { k: 11, r: 3, fl: 1 }];   // which of your hand-drawn clouds holds which work (fl = mirrored, r = a slight tilt)
   $('#bubbles').innerHTML = WORKS.slice(0, BUBBLES).map((w, i) => { const c = CLOUD_ART[i % CLOUD_ART.length];
-    return `<a class="bub k${c.k}${c.fl ? ' fl' : ''}" href="#${w.id}" data-i="${i}" data-k="${c.k}" style="--rot:${c.r}deg"><span class="bub-art" aria-hidden="true"></span><span class="bub-in"><span class="bub-pic${w.img ? '' : ' ph'}">${w.img ? `<img src="${w.img}" alt="" decoding="async">` : `<i class="mk dp${w.mark}"></i>`}</span><span class="bub-name">${esc(w.name)}</span></span></a>`; }).join('');
+    return `<a class="bub k${c.k}${c.fl ? ' fl' : ''}" href="#${w.id}" data-i="${i}" data-k="${c.k}" style="--rot:${c.r}deg"><span class="bub-art" aria-hidden="true"></span><span class="bub-in"><span class="bub-pic${w.img ? '' : ' ph'}">${w.img ? `<img loading="lazy" src="${w.img}" alt="" decoding="async">` : `<i class="mk dp${w.mark}"></i>`}</span><span class="bub-name">${esc(w.name)}</span></span></a>`; }).join('');
   $('#nf-logo').innerHTML = SITE.logoSVG('signed');
 
   /* ---------- header for every page but Home ---------- */
@@ -6283,7 +6308,7 @@ void main() {
   }
   const rememberedName = () => { try { return cleanName(localStorage.getItem(NAME_KEY)); } catch (e) { return ''; } };
 
-  let db = null, uid = null, mode = 'pending', loaded = false;   // mode: pending, shared (read and write), readonly (read only), local (this device only)
+  let db = null, uid = null, mode = 'pending', loaded = false, down = false, runTok = null, tokGen = 0, tokP = Promise.resolve();   // mode: pending, shared (read and write), readonly (read only), local (this device only). down: the last attempt to load the board failed (it is tried again; a save is still sent). runTok: the server's signed note for the game being played
   let rows = [];                                                  // the shared board, best first
   async function connect() {
     let d = null, u = null;
@@ -6296,10 +6321,10 @@ void main() {
     try {
       d.collection(COL).orderBy('score', 'desc').limit(25).onSnapshot(snap => {
         rows = snap.docs.map(x => norm(x.data(), x.id)).filter(Boolean).sort(byRank);
-        loaded = true;
+        loaded = true; down = false;
         renderBoard();
         refreshSaved();
-      }, () => { mode = 'local'; renderBoard(); });
+      }, () => { down = true; renderBoard(); });
     } catch (e) { mode = 'local'; }
     renderBoard();
   }
@@ -6314,9 +6339,10 @@ void main() {
   const cell = (tag, cls, text) => { const el = document.createElement(tag); el.className = cls; el.textContent = text; return el; };
   const ncell = (cls, n) => { const el = document.createElement('td'); el.className = cls; el.append(numNode(n)); return el; };
   function renderBoard() {
-    const sharedView = mode === 'shared' || mode === 'readonly';
+    const offline = down && !loaded;                         // the board has not come through yet: show this device's own scores for now
+    const sharedView = (mode === 'shared' || mode === 'readonly') && !offline;
     const wait = mode === 'pending' || (sharedView && !loaded);
-    const list = sharedView ? rows.slice(0, TOP) : mode === 'local' ? readLocal().slice(0, TOP) : [];
+    const list = sharedView ? rows.slice(0, TOP) : (mode === 'local' || offline) ? readLocal().slice(0, TOP) : [];
     const body = $('#sc-rows');
     body.textContent = '';
     list.forEach((r, i) => {
@@ -6331,11 +6357,12 @@ void main() {
     $('#sc-empty').hidden = !!list.length;
     $('#sc-empty').textContent = wait ? 'Loading the board…' : 'No scores yet. Be the first name on the board.';
     $('#sc-note').textContent =
-      mode === 'shared' ? '' :
       mode === 'readonly' ? 'You can see the board, but this link does not let you add to it. Your scores are kept on this device.' :
-      mode === 'local' ? 'The shared board can’t be reached from here, so these scores are kept on this device.' : '';
+      offline ? 'The shared board can’t be reached right now, so these are the scores on this device. Trying again…' :
+      mode === 'local' ? 'The shared board can’t be reached from here, so these scores are kept on this device.' :
+      down ? 'Couldn’t refresh the board just now. Trying again…' : '';
     const mineLine = $('#sc-mine'), own = readLocal()[0];
-    const onBoard = mode === 'shared' && list.some(r => r.id === uid);
+    const onBoard = mode === 'shared' && !offline && list.some(r => r.id === uid);
     mineLine.hidden = !(own && sharedView && !onBoard);
     mineLine.textContent = '';
     if (!mineLine.hidden) mineLine.append('Your best on this device: ' + own.name + ', ', numNode(own.score), '.');
@@ -6347,7 +6374,7 @@ void main() {
     const ref = db.collection(COL).doc(uid);
     const attempt = async () => {
       const cur = await ref.get(name), old = cur.exists ? cur.data() : null;   // the board's row for this name, else this phone's own
-      if (!old || !Number.isInteger(old.score) || sc > old.score) { await ref.set({ name, score: sc, at: Date.now() }); return 'shared'; }
+      if (!old || !Number.isInteger(old.score) || sc > old.score) { await tokP; await ref.set({ name, score: sc, at: Date.now(), run: runTok || '' }); return 'shared'; }
       keptRenamed = false; keptName = old.name; keptBest = old.score;
       if (!sameName(old.name, name)) { await ref.update({ name }); keptRenamed = true; keptName = name; }
       return 'kept';
@@ -6356,7 +6383,8 @@ void main() {
     catch (e) {
       if (!e || e.code !== 'unavailable') throw e;
       await new Promise(r => setTimeout(r, 400 + Math.random() * 600));
-      return attempt();
+      try { return await attempt(); }
+      catch (e2) { if (e2 && e2.reason === 'used') return 'shared'; throw e2; }          // the first try had in fact gone through
     }
   }
   function savedText() {
@@ -6397,7 +6425,16 @@ void main() {
       if (e && e.code === 'invalid_argument') { mode = 'readonly'; kind = 'readonly'; renderBoard(); }
       else {
         saving = false; input.readOnly = false; $('#g-save-btn').disabled = false;
-        if (mine === runId) { setMsg('Could not reach the shared board. Try again in a moment.', true); live('Could not reach the shared board.'); }
+        if (mine === runId) {
+          const s = e && e.status, tag = s ? ' (error ' + s + ')' : '';
+          let msg;
+          if (e && e.code === 'rejected') msg = (e.reason === 'fast' ? 'That score is higher than is possible in the time the game took, so it was not added to the shared board.' : 'That game could not be checked, so its score was not added to the shared board. Play again and save that one.') + tag;
+          else {
+            const why = !s ? 'There is no connection to the shared board.' : s === 429 ? 'That was too quick after the last save. Wait a second and press Save again.' : s === 403 ? 'This link is not allowed to save to the shared board.' : 'The shared board could not save it just now.';
+            msg = why + (s === 429 ? '' : ' Your score is kept on this device. Press Save to try again.') + tag;
+          }
+          setMsg(msg, true); live(msg);
+        }
         return;
       }
     }
@@ -6466,6 +6503,8 @@ void main() {
     score = 0; streak = 0; lives = LIVES; drops = []; rings = []; eaten = []; bite = null; spawnIn = .5; px = target = W / 2; last = 0;
     run = 0; runId++; saved = false; saving = false; savedKind = '';
     $('#g-name').readOnly = false; $('#g-save-btn').disabled = false;
+    const tg = ++tokGen; runTok = null;                    // ask the server to note that a game has started: a score can only be saved with that note
+    tokP = (async () => { try { await ready; if (mode !== 'shared' || !db) return; const t = await db.collection(COL).startRun(); if (tg === tokGen) runTok = t; } catch (e) {} })();
     skyRoll();
     hud();
     setState('play');
@@ -6602,10 +6641,11 @@ void main() {
 
   /* controls: a mouse or finger slides the mouth, the arrow keys (or A and D) do the same */
   const setX = e => { const r = cv.getBoundingClientRect(); if (r.width) target = (e.clientX - r.left) / r.width * W; };
-  cv.addEventListener('pointermove', e => { if (state === 'play') setX(e); });
-  cv.addEventListener('pointerdown', e => { if (state === 'play') setX(e); });
+  cv.addEventListener('pointermove', e => { if (state === 'play' && e.isTrusted) setX(e); });         // only the person's own pointer steers: events made by a script are ignored
+  cv.addEventListener('pointerdown', e => { if (state === 'play' && e.isTrusted) setX(e); });
   const keyDir = k => (k === 'ArrowLeft' || k === 'a' || k === 'A') ? 'left' : (k === 'ArrowRight' || k === 'd' || k === 'D') ? 'right' : '';
   document.addEventListener('keydown', e => {
+    if (!e.isTrusted) return;
     const tg = e.target;
     if (tg && /^(INPUT|TEXTAREA|SELECT)$/.test(tg.tagName)) return;      // typing a name is not steering
     if (panel.hidden || (tg && tg.closest && tg.closest('.tab')) || e.ctrlKey || e.metaKey || e.altKey) return;
@@ -6613,7 +6653,7 @@ void main() {
     if (dir) { keys[dir] = true; if (state === 'play') e.preventDefault(); }
     else if ((e.key === 'p' || e.key === 'P' || e.key === 'Escape') && !e.repeat) { if (state === 'play') pause(); else if (state === 'paused') resume(); }
   });
-  document.addEventListener('keyup', e => { const dir = keyDir(e.key); if (dir) keys[dir] = false; });
+  document.addEventListener('keyup', e => { if (!e.isTrusted) return; const dir = keyDir(e.key); if (dir) keys[dir] = false; });
   window.addEventListener('blur', () => { keys.left = keys.right = false; pause(); dosCancel(); });
   document.addEventListener('visibilitychange', () => { if (document.hidden) { pause(); dosCancel(); } });
   if (window.ResizeObserver) new ResizeObserver(() => { if (!panel.hidden) resize(); }).observe(arena);
@@ -6663,11 +6703,7 @@ void main() {
   renderBoard();
   ready = connect();
   onView((site.route() || {}).view);                         // a visitor who arrives straight on the game page
-  /* test hooks, like the lab's own */
-  window.AppLGame = { state: () => state, score: () => score, lives: () => lives, best: () => best, select, start, begin, pause, resume, dos: { open: () => !dos.hidden, text: () => dosText.textContent },
-    board: { mode: () => mode, rows: () => rows.slice(), local: readLocal, ready: () => ready, save },
-    snapshot: () => ({ px, target, H, W, floorPad, drops: drops.map(d => ({ x: d.x, y: d.y, w: d.w, h: d.h })), rings: rings.length }),
-    step: (dt, t) => { step(dt, t); draw(t); } };
+  
 })();
 </script>
 <script>
