@@ -403,6 +403,17 @@ html.wk-wall #work-hub:empty { display: none; }
 html.wk-wall .work-pg .wsky { flex: 0 0 auto; min-height: 8px; }
 html.wk-wall .bubbles { visibility: hidden; }
 #work-hub .wall-open { margin: 14px 0 0; text-align: center; }
+/* a plain, visible list of every piece, under the wall, so each one is a single click away */
+#work-hub .work-list { margin: 22px 0 0; padding: 18px clamp(14px, 3vw, 26px) 20px; border-radius: 14px; background: rgba(251, 250, 246, .94); color: var(--ink); box-shadow: 0 2px 14px rgba(21, 23, 26, .14); }
+#work-hub .work-list h2 { margin: 0 0 8px; font-family: var(--f-body); font-size: 12px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+#work-hub .work-list ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 28px; }
+#work-hub .work-list li { border-bottom: 1px solid rgba(21, 23, 26, .12); }
+#work-hub .work-list a { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 10px 2px; color: inherit; text-decoration: none; min-height: 44px; box-sizing: border-box; }
+#work-hub .work-list .wl-n { font-family: var(--f-display); font-weight: 600; line-height: 1.25; }
+#work-hub .work-list .wl-s { flex: none; font-size: 13px; color: var(--muted); white-space: nowrap; }
+#work-hub .work-list a:hover .wl-n { text-decoration: underline; text-underline-offset: 3px; }
+#work-hub .work-list a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 6px; }
+@media (max-width: 640px) { #work-hub .work-list ul { grid-template-columns: 1fr; } }
 .wall-open { position: relative; }
 .wsp { position: absolute; inset: 0; z-index: 2; pointer-events: none; overflow: visible; }
 .wsp .sk { position: absolute; opacity: 0; }
@@ -463,9 +474,14 @@ html.wk-drop.mxp-top .menu-home .nc { --wh: min(calc((100cqw - 36px - 2 * var(--
 })();
 </script>
 <title>LaurenAppL Shop Opening</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600&family=DM+Sans:wght@400;500;600&display=swap">
+<style>
+/* The three typefaces are served from this site (the fonts folder), not from Google. All are free under the SIL Open Font Licence. */
+@font-face { font-family: "Fraunces"; font-style: normal; font-weight: 100 900; font-display: swap; src: url(fonts/fraunces-latin-wght-normal.woff2) format("woff2"); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+@font-face { font-family: "DM Sans"; font-style: normal; font-weight: 400; font-display: swap; src: url(fonts/dm-sans-latin-400-normal.woff2) format("woff2"); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+@font-face { font-family: "DM Sans"; font-style: normal; font-weight: 500; font-display: swap; src: url(fonts/dm-sans-latin-500-normal.woff2) format("woff2"); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+@font-face { font-family: "DM Sans"; font-style: normal; font-weight: 600; font-display: swap; src: url(fonts/dm-sans-latin-600-normal.woff2) format("woff2"); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+@font-face { font-family: "Bungee"; font-style: normal; font-weight: 400; font-display: swap; src: url(fonts/bungee-latin-400-normal.woff2) format("woff2"); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+</style>
 <style>
 /* ---- kept from the lab ---- */
 /* Overcast: grey autumn sky, no ruled lines, dark logo, rain in the background */
@@ -616,6 +632,9 @@ html:not(.shop-sky) .shopsky .sky i { animation-play-state: paused; }
 .board-wrap { display: grid; gap: 14px; width: 100%; max-width: 560px; margin-inline: auto; min-width: 0; }
 .board-box { overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
 .giveaway { margin: 0; padding: 15px 18px; border-radius: 10px; border: 1px solid rgba(176, 134, 28, .5); background: #FFF4CF; color: #2B2412; font-size: 15px; line-height: 1.55; box-shadow: 0 2px 10px rgba(120, 90, 10, .12); }
+.giveaway-rules { margin-top: 10px; font-size: 14px; }
+.giveaway-rules ul { margin: 6px 0 0; padding-left: 1.2em; }
+.giveaway-rules li + li { margin-top: 5px; }
 .giveaway strong { display: block; margin-bottom: 4px; font-size: 13px; font-weight: 700; letter-spacing: .12em; color: #7A5A00; }
 /* the Home banner: one slim band above the sky, same warm paper as the notice on the scores page */
 .giveaway-bar { background: #FFF4CF; border-bottom: 1px solid rgba(176, 134, 28, .5); color: #2B2412; }
@@ -1677,7 +1696,7 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
         <header class="head">
           <p class="kicker">Play</p>
           <h1 tabindex="-1">Drip Drip Drop</h1>
-          <p class="lede">A very basic game made from your own raindrop drawings. Slide the mouth under the falling drops and let it eat as many as you can. You have three lives, and the rain speeds up the more you catch.</p>
+          <p class="lede">A very basic game made from my own raindrop drawings. Slide the mouth under the falling drops and let it eat as many as you can. You have three lives, and the rain speeds up the more you catch.</p>
         </header>
         <div class="gwrap">
           <div class="hud">
@@ -1728,6 +1747,16 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
         </header>
         <div class="board-wrap">
           <p class="giveaway" role="note"><strong>GIVEAWAY ALERT:</strong> to celebrate the launch of LaurenAppL.com I will be giving a free print of your choice to whoever holds highest Drip Drip Drop score on the <span data-plain>20th November 2026 at 7pm GMT</span>. Good luck! 🍀</p>
+          <div class="giveaway giveaway-rules" role="note">
+            <strong>THE RULES</strong>
+            <ul>
+              <li><b>Who can enter:</b> anyone with a UK delivery address. If you are outside the UK, email <a href="mailto:hello@laurenappl.com">hello@laurenappl.com</a> before the draw and I will see what I can do.</li>
+              <li><b>Not me or my family and friends:</b> we can play, and our scores may sit on the board, but we can’t win. I skip us when I pick the winner.</li>
+              <li><b>A tie:</b> if two players have the same score, the one who reached it first wins.</li>
+              <li><b>Picking the winner:</b> whoever holds the highest eligible score at <span data-plain>7pm GMT on 20 November 2026</span>. I check the winning score before I confirm it, and I may ask for a screen recording of the game.</li>
+              <li><b>Claiming it:</b> the board only shows nicknames, so email <a href="mailto:hello@laurenappl.com">hello@laurenappl.com</a> with your nickname and score within 14 days of the draw. If I haven’t heard from the winner by then, the prize goes to the next eligible score.</li>
+            </ul>
+          </div>
           <div class="board-box" id="sc-box" hidden>
             <table class="board">
               <caption class="sr">Top twenty scores in Drip Drip Drop</caption>
@@ -1751,10 +1780,10 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
           <div class="stack">
             <header class="head"><p class="kicker">About</p><h1 tabindex="-1">About</h1></header>
             <p class="story">Well, I’m a bit of a bellend to be honest! I like making stuff though. My background is retail.</p>
-            <p class="story">I’ve recently rediscovered my creativity and love making art- whether that’s drawing, painting or photography- I am here for all of it! I’m also teaching myself game design and animation. Doing this full time would be amazing and make my life a little bit sparkly so, armed with the cheek of job should you wish to support my endeavours feel free to contribute here</p>
-            <div class="row"><a class="btn primary big" href="https://www.paypal.com/donate/?business=TCUYGLMXHJ6VY&amp;no_recurring=0&amp;item_name=Support+LaurenAppL&amp;currency_code=GBP" target="_blank" rel="noopener">Contribute with PayPal</a></div>
-            <p class="story">Full disclosure- I use ai tools to help bring my hand drawn/painted artworks to life - unashamedly.</p>
-            <p class="story">I’ll be sharing self taught journey on my LaurenAppLStudios TikTok <a href="https://www.tiktok.com/@bizzarrebella__" target="_blank" rel="noopener">@bizzarrebella__</a>. You can catch me live on TikTok <a href="https://www.tiktok.com/@Laurenapple666" target="_blank" rel="noopener">@Laurenapple666</a>.</p>
+            <p class="story">I’ve recently rediscovered my creativity and love making art – whether that’s drawing, painting or photography – I am here for all of it! I’m also teaching myself game design and animation. Doing this full time would be amazing and make my life a little bit sparkly, so if you’d like to support my endeavours, feel free to contribute here.</p>
+            <div class="row"><a class="btn primary big" href="https://www.paypal.com/cgi-bin/webscr?cmd=_xclick&amp;business=TCUYGLMXHJ6VY&amp;item_name=Support+LaurenAppL&amp;currency_code=GBP&amp;no_shipping=1" target="_blank" rel="noopener">Support my creativity</a></div>
+            <p class="story">Full disclosure – I use AI tools to help bring my hand-drawn/painted artworks to life, unashamedly.</p>
+            <p class="story">I’ll be sharing my self-taught journey on my LaurenAppLStudios TikTok <a href="https://www.tiktok.com/@bizzarrebella__" target="_blank" rel="noopener">@bizzarrebella__</a>. You can catch me live on TikTok <a href="https://www.tiktok.com/@Laurenapple666" target="_blank" rel="noopener">@Laurenapple666</a>.</p>
             <p class="story">Laters!</p>
             <div class="row"><a class="btn big" href="#shop">Visit the shop</a></div>
             <p class="small muted">Write to <a href="mailto:hello@laurenappl.com">hello@laurenappl.com</a></p>
@@ -5043,6 +5072,9 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
       .map(l => ({ key: l.key.slice(0, 60), name: l.name.slice(0, 40), option: l.option.slice(0, 60), qty: l.qty, mark: ((l.mark % NMARK) + NMARK) % NMARK, single: !!l.single }));
   } catch (e) {}
   const saveCart = () => { try { localStorage.setItem('appl-cart', JSON.stringify(cart)); } catch (e) {} };
+  /* PayPal sends the buyer back to /?paid=1 after paying (see paypalURL). Seeing that, the cart empties itself and the cart page says thank you. */
+  let justPaid = false;
+  try { if (/[?&]paid=1(&|$)/.test(location.search)) { justPaid = true; cart.length = 0; saveCart(); history.replaceState(null, '', location.pathname + '#cart'); } } catch (e) {}
   const count = () => cart.reduce((n, l) => n + l.qty, 0);
   function syncCount() {
     const n = count();
@@ -5064,7 +5096,10 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
      back   : (optional) the web address you want PayPal to send people back to after paying. */
   const SHOP = { paypal: 'TCUYGLMXHJ6VY', currency: 'GBP', back: '',
     ship: { standard: 4.5, fast: 6 },                          // prints: UK delivery, charged once per order
-    orig: { A6: null, A5: 5.5, A4: null, A3: null } };          // originals: postage by size (null = not set yet: the cart asks the buyer to write to you); or post: 12 on one work
+    orig: { A6: null, A5: 5.5, A4: 5.5, A3: null } };          // originals: postage by size (null = not set yet: the cart asks the buyer to write to you); or post: 12 on one work
+  /* Put your PO box or virtual-office address between the quotes, for example 'PO Box 123, Townname, AB1 2CD'. It then appears in the Terms and on the cancellation form.
+     Until you do, the Terms say to ask for it. */
+  const BUSINESS_ADDRESS = '';
   const money = n => '£' + (Math.round(n * 100) / 100).toFixed(2).replace(/\.00$/, '');
   function linePrice(l) {
     const m = /^(work-\d+):(original|print):?(.*)$/.exec(l.key); if (!m) return null;
@@ -5097,6 +5132,7 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
   function paypalURL(t, ref) {
     const q = [['cmd', '_cart'], ['upload', '1'], ['business', SHOP.paypal], ['currency_code', SHOP.currency], ['charset', 'utf-8'], ['no_shipping', '2'], ['no_note', '1'], ['invoice', ref]];
     if (SHOP.back) q.push(['return', SHOP.back], ['cancel_return', SHOP.back]);
+    else if (/^https?:$/.test(location.protocol)) { const base = location.origin + location.pathname; q.push(['return', base + '?paid=1'], ['cancel_return', base + '#cart'], ['rm', '1']); }      // back to the site after paying; if they cancel, back to the cart
     let n = 0;
     cart.forEach((l, k) => { n++; q.push(['item_name_' + n, (l.name + ' - ' + l.option).slice(0, 120)], ['item_number_' + n, l.key.slice(0, 60)], ['amount_' + n, t.rows[k].toFixed(2)], ['quantity_' + n, String(l.qty)]); });
     t.parts.forEach(x => { n++; q.push(['item_name_' + n, x.label.slice(0, 120)], ['amount_' + n, x.amt.toFixed(2)], ['quantity_' + n, '1']); });
@@ -5106,7 +5142,7 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
   function renderCart() {
     const box = $('#cart-box');
     if (!cart.length) {
-      box.innerHTML = `<p class="lede">Nothing in your cart yet.</p><div class="row"><a class="btn primary big" href="#shop">Visit the shop</a><a class="btn big" href="#work">See the work</a></div>`;
+      box.innerHTML = (justPaid ? `<p class="notice" role="status">Thank you for your order. Your cart has been emptied.</p>` : '') + `<p class="lede">Nothing in your cart yet.</p><div class="row"><a class="btn primary big" href="#shop">Visit the shop</a><a class="btn big" href="#work">See the work</a></div>`;
       return;
     }
     const t = cartTotals(), live = !!SHOP.paypal && t.ship != null, ready = live && !t.bad;
@@ -5284,7 +5320,10 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
     const list = WORKS.filter(w => w.full), mi = list.findIndex(w => w.slug === 'moment');
     if (mi > 0) list.unshift(list.splice(mi, 1)[0]);                                  // the wall opens on The Moment; the rest follow in their usual order
     const it = { name: 'the work', slug: 'hub', hub: true, wall: list.map((w, k) => ({ t: w.full, cap: w.name, href: '#' + w.id, img: w.img || w.full, sub: [w.meta, w.sold ? 'Sold' : w.kept && w.prints ? 'Prints from \u00a3' + Math.min(...w.prints.map(q => q[2])) : (w.price ? '\u00a3' + w.price : '')].filter(Boolean).join('\n'), a: [0.5, 0.0, 1.0], b: [0.5, 1.0, 1.06] })) };
-    box.innerHTML = wallHTML(it);
+    box.innerHTML = wallHTML(it) +
+      `<nav class="work-list" aria-labelledby="wl-h"><h2 id="wl-h">All the work</h2><ul>` + list.map(w => {
+        const sub = w.sold ? 'Sold' : w.kept && w.prints ? 'Prints from \u00a3' + Math.min(...w.prints.map(q => q[2])) : (w.price ? 'Original \u00a3' + w.price : '');
+        return `<li><a href="#${w.id}"><span class="wl-n">${esc(w.name)}</span>${sub ? `<span class="wl-s">${sub}</span>` : ''}</a></li>`; }).join('') + `</ul></nav>`;
     const stopWall = wireWall(box, it), stopSp = wallSparks(box);
     hubStop = () => { if (stopWall) stopWall(); stopSp(); };
   }
@@ -5652,7 +5691,11 @@ void main() {
     const form = $('#buy');
     if (!form) return;
     const sizeField = $('#size-field'), sel = $('#v-sel');
-    $$('input[name=what]', form).forEach(r => r.addEventListener('change', () => { if (sizeField) sizeField.hidden = r.value !== 'print' || !r.checked; }));
+    const addBtn = $('button[type=submit]', form);
+    const inCart = () => { const p = $('input[name=what]:checked', form); return it.kind === 'work' && p && p.value === 'original' && cart.some(l => l.key === it.id + ':original'); };
+    const syncBtn = () => { if (addBtn) addBtn.textContent = inCart() ? 'In your cart' : 'Add to cart'; };      // an original is one of one, so a second click can't add it again
+    $$('input[name=what]', form).forEach(r => r.addEventListener('change', () => { if (sizeField) sizeField.hidden = r.value !== 'print' || !r.checked; syncBtn(); }));
+    syncBtn();
     form.addEventListener('submit', e => {
       e.preventDefault();
       let what = 'original';
@@ -5663,10 +5706,11 @@ void main() {
       if (it.kind === 'work' && what === 'original') line = { key: it.id + ':original', name: it.name, option: 'Original', mark: it.mark, single: true };
       else if (it.kind === 'work') line = { key: it.id + ':print:' + v, name: it.name, option: 'Print, ' + (it.prints ? v : v.toLowerCase()) + (it.edition ? ', ' + it.edition.toLowerCase() : ''), mark: it.mark };
       else line = { key: it.id + ':' + v, name: it.name, option: v, mark: it.mark };
-      addToCart(line);
+      const already = line.single && cart.some(l => l.key === line.key);
+      addToCart(line); syncBtn();
       const note = $('#buy-note');
       const keep = '#' + shopRoute();
-      note.innerHTML = `Added to your cart.<span class="after-add"><a class="btn" href="${keep}">Keep shopping</a><a class="btn" href="#cart">View cart</a></span>`;
+      note.innerHTML = `${already ? 'This original is already in your cart. There is only one.' : 'Added to your cart.'}<span class="after-add"><a class="btn" href="${keep}">Keep shopping</a><a class="btn" href="#cart">View cart</a></span>`;
       note.hidden = false;
     });
   }
@@ -5727,15 +5771,21 @@ void main() {
   /* ---------- the Upcoming projects page ---------- */
   const UPCOMING = [
     { title: 'Animations', status: 'On the way', text: 'I’m planning a place to show my animations. Leave your email and I’ll tell you when the first ones are up.', topic: 'animations', ask: 'Tell me when they’re up' },
-    { title: 'Originals on sale', status: 'Not yet', text: 'I’m not ready to let go of my first originals, so those pieces are prints only for now. If you have your eye on one, say so on its page and I’ll tell you if it ever goes on sale. Or leave your email here for any of them.', topic: 'originals', ask: 'Tell me when one goes on sale', link: ['#shop/prints', 'See the prints'] },
+    { title: 'Originals on sale', topic: 'originals', ask: 'Tell me when another goes on sale', link: ['#shop/originals', 'See the originals'],
+      status: () => onSaleNow().length ? 'Some on sale now' : 'Not yet',
+      text: () => { const on = onSaleNow(); const NUM = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten'];
+        const names = on.map(w => w.name), list = names.length > 1 ? names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1] : names[0] || '';
+        return (on.length ? (NUM[on.length] || on.length) + (on.length === 1 ? ' original is' : ' originals are') + ' on sale now: ' + list + '. The rest I’m keeping for now, so those are prints only.' : 'I’m not ready to let go of my first originals, so those pieces are prints only for now.') +
+          ' If you have your eye on one of those, say so on its page and I’ll tell you if it ever goes on sale. Or leave your email here for any of them.'; } },
     { title: 'Framing', status: 'Thinking about it', text: 'Everything is sold unframed at the moment. I may offer framed pieces in the future.', topic: 'frames', ask: 'Tell me if I do' }
   ];
+  const onSaleNow = () => WORKS.filter(w => w && w.price && !w.kept && !w.sold);        // the originals the shop is selling right now, so this page can never disagree with it
   const TOPIC_NAME = k => { const m = /^work-(\d+)$/.exec(k); return m && BY_ID[k] ? 'Original of ' + BY_ID[k].name : ({ animations: 'Animations', originals: 'Originals on sale', frames: 'Framing' })[k] || k; };
   let suStop = null;
   function stopSignups() { if (suStop) { suStop(); suStop = null; } }
   function renderUpcoming() {
     $('#up-list').innerHTML = UPCOMING.map(u =>
-      `<article class="up-card"><header><h2>${esc(u.title)}</h2><span class="chip">${esc(u.status)}</span></header><p>${esc(u.text)}</p>` +
+      `<article class="up-card"><header><h2>${esc(u.title)}</h2><span class="chip">${esc(typeof u.status === 'function' ? u.status() : u.status)}</span></header><p>${esc(typeof u.text === 'function' ? u.text() : u.text)}</p>` +
       (u.topic ? notifyForm(u.topic, u.ask, '') : '') + (u.link ? `<p><a class="btn" href="${esc(u.link[0])}">${esc(u.link[1])}</a></p>` : '') + `</article>`).join('');
     wireSignups();
   }
@@ -5781,6 +5831,18 @@ void main() {
 <li><strong>Look after it.</strong> Keep it unmarked and in the condition you received it. If it comes back damaged or marked because it was handled more than was needed to see what it’s like, I can take the loss in value off your refund.</li>
 <li><strong>Your refund.</strong> I’ll refund you within 14 days of the work reaching me (or of you showing me proof of postage, if that’s earlier). It includes the standard postage you paid to have it sent, and it goes back the way you paid.</li>
 </ul>
+<h3>Cancellation form</h3>
+<p>You don’t have to use a form, but if you’d like one, copy this, fill it in and send it to me${BUSINESS_ADDRESS ? ' at ' + esc(BUSINESS_ADDRESS) + ' or' : ''} by email to <a href="mailto:hello@laurenappl.com">hello@laurenappl.com</a>.</p>
+<div style="margin:12px 0;padding:12px 16px;border-left:3px solid currentColor;background:rgba(0,0,0,.04)">
+<p>To Lauren Apple (LaurenAppL), ${BUSINESS_ADDRESS ? esc(BUSINESS_ADDRESS) + ', ' : ''}hello@laurenappl.com:</p>
+<p>I hereby give notice that I cancel my contract of sale of the following goods: [name of the work, and the size if it is a print]</p>
+<p>Ordered on [date] / received on [date]</p>
+<p>Order number: [number]</p>
+<p>Name: [your name]</p>
+<p>Address: [your address]</p>
+<p>Signature (only if this form is sent on paper): [signature]</p>
+<p>Date: [date]</p>
+</div>
 <h2>If something goes wrong in the post</h2>
 <p>If a parcel arrives damaged or doesn’t arrive, tell me as soon as you can and send photos of the packaging and the damage.</p>
 <h2>Frames</h2>
@@ -5788,7 +5850,7 @@ void main() {
 <h2>How refunds are paid</h2>
 <p>Refunds go back to the account you paid with, through PayPal. PayPal can take a few working days to show it.</p>
 <p>Questions about any of this: <a href="#contact">get in touch</a> and put your order number in the message.</p>
-<p class="small muted">Last updated 7 November 2026.</p>
+<p class="small muted">Last updated 10 November 2026.</p>
 `;
   const SHIPPING_HTML = `
 <p class="lede">What delivery costs and how it works. The price is always shown in your cart before you pay.</p>
@@ -5822,26 +5884,25 @@ void main() {
 <ul>
 <li><strong>PayPal</strong> takes payments, and sees whatever you give it. <a href="https://www.paypal.com/uk/legalhub/paypal/privacy-full" rel="noopener">Its privacy statement</a> explains how it uses that.</li>
 <li><strong>Vercel</strong> hosts this website, keeps the High scores and sign-up lists, and counts visits for me. Like any web host, it sees the technical details of each visit, such as your IP address.</li>
-<li><strong>Google Fonts</strong> supplies the lettering. Opening a page asks Google to send the fonts, which tells Google your IP address.</li>
 <li><strong>Apple (iCloud Mail)</strong> carries my email.</li>
 <li><strong>Royal Mail or another carrier</strong> is given your name and address to deliver your parcel.</li>
 </ul>
 <p>Some of these are based outside the UK, in the USA in particular. Where that is so, they rely on the safeguards UK law provides for sending data abroad.</p>
 <h2>Your rights</h2>
 <p>You can ask to see what I hold about you, to correct it, to have it deleted, or to object to how I use it. Email me and I’ll deal with it, normally within a month. If you are unhappy with how I have handled your details you can complain to the Information Commissioner’s Office at <a href="https://ico.org.uk" rel="noopener">ico.org.uk</a> (0303 123 1113), though I’d like the chance to put it right first.</p>
-<p class="small muted">Last updated 8 November 2026.</p>
+<p class="small muted">Last updated 10 November 2026.</p>
 `;
   const TERMS_HTML = `
 <p class="lede">These are the terms for buying from this site and for using it. They go together with <a href="#shipping">Shipping</a> and <a href="#returns">Returns and refunds</a>, and with the <a href="#privacy">Privacy</a> page.</p>
 <h2>Who is selling</h2>
-<p>Lauren Apple, a sole trader selling from the UK as LaurenAppL. You can write to me at <a href="mailto:hello@laurenappl.com">hello@laurenappl.com</a>. If you need a postal address, for a return for example, ask and I’ll give it to you before you send anything.</p>
+<p>Lauren Apple, a sole trader selling from the UK as LaurenAppL. You can write to me at <a href="mailto:hello@laurenappl.com">hello@laurenappl.com</a>. ${BUSINESS_ADDRESS ? 'My postal address is ' + esc(BUSINESS_ADDRESS) + '.' : 'If you need a postal address, for a return for example, ask and I’ll give it to you before you send anything.'}</p>
 <h2>Prices and payment</h2>
 <p>Prices are in pounds sterling and are shown with the work. Delivery is added in your cart before you pay. You pay through PayPal, and I never see your card details.</p>
 <h2>Your order</h2>
 <p>What you see on the site is an invitation to order. Your order is an offer to buy, and the contract is made when I accept it and send you an email to say so. If I can’t supply something (for example a one-off original that has already been sold, or a price that is plainly a mistake), I’ll tell you and refund anything you have paid.</p>
 <p>Originals are one of a kind. A print is a print of the work shown; a limited edition is limited to the number given on its page. Colours on a screen are never exactly the colours on paper. See <a href="#returns">Returns and refunds</a> for what happens if something is wrong or you change your mind.</p>
 <h2>Delivery</h2>
-<p>I deliver within the UK, and abroad by arrangement. Costs and times are on the <a href="#shipping">Shipping</a> page.</p>
+<p>I deliver within the UK, and abroad by arrangement. The costs are on the <a href="#shipping">Shipping</a> page.</p>
 <h2>Copyright</h2>
 <p>I made every artwork on this site and the copyright in each one stays with me. When you buy a work you buy the object, not the right to reproduce it: please don’t copy it, print it, sell copies of it or use it commercially without my written permission. Keeping it, hanging it, giving it away or selling that same object on is fine.</p>
 <h2>Using this site</h2>
@@ -5852,7 +5913,7 @@ void main() {
 <p>Nothing here limits your rights as a consumer under the law, or my responsibility for anything the law doesn’t let me limit. Otherwise I’m not responsible for losses that couldn’t reasonably have been foreseen, or for the site being unavailable from time to time.</p>
 <h2>The law</h2>
 <p>These terms are governed by the law of England and Wales (or of Scotland or Northern Ireland, if that is where you live, and you prefer it). If we can’t sort something out between us, you can use the courts of the part of the UK where you live.</p>
-<p class="small muted">Last updated 7 November 2026.</p>
+<p class="small muted">Last updated 10 November 2026.</p>
 `;
   const POLICY = {
     shipping: ['Shipping', [], SHIPPING_HTML],
@@ -6333,8 +6394,7 @@ void main() {
   let chunkyAsked = false;
   function chunkyFont() {
     if (chunkyAsked) return; chunkyAsked = true;
-    const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = 'https://fonts.googleapis.com/css2?family=Bungee&display=swap';
-    document.head.appendChild(l);
+    try { document.fonts && document.fonts.load('1em "Bungee"'); } catch (e) {}          // Chunky now comes from this site (the fonts folder), so ask for it the first time the table is opened
   }
   const cell = (tag, cls, text) => { const el = document.createElement(tag); el.className = cls; el.textContent = text; return el; };
   const ncell = (cls, n) => { const el = document.createElement('td'); el.className = cls; el.append(numNode(n)); return el; };
