@@ -5,23 +5,50 @@ import crypto from 'node:crypto';
 
 /* ---------- storage ---------- */
 let realStore = null;
+const tagOf = s => String(s || '').replace(/^W\//i, '').replace(/^"|"$/g, '');          // "abc", W/"abc" and abc are the same version tag written three ways
 export function blobStore() {
   if (globalThis.__applTestStore) return globalThis.__applTestStore;       // only ever set by the local tests
   if (realStore) return realStore;                                         // one connection per warm server, so what it remembers is shared by every request
   let lib = null;
-  const load = async () => lib || (lib = await import('@vercel/blob'));
+  const load = async () => lib || (lib = globalThis.__applBlobLib || await import('@vercel/blob'));
+  const fresh = async (get, path) => {                                     // the file as it is right now, straight from the store (never a saved copy)
+    const r = await get(path, { access: 'private', useCache: false });
+    return r && r.statusCode === 200 && r.stream ? await new Response(r.stream).text() : null;
+  };
+  /* Is the file in the store still exactly the one we read? (same words, same size, saved at the same moment, so not an old copy kept somewhere) */
+  const unchanged = async (get, path, h, was) => {
+    if ((await fresh(get, path)) !== was.raw) return false;
+    if (Number.isFinite(h.size) && h.size !== Buffer.byteLength(was.raw)) return false;
+    const a = Date.parse(was.lm), b = Date.parse(h.uploadedAt);
+    return !(Number.isFinite(a) && Number.isFinite(b) && Math.abs(a - b) > 2000);
+  };
+  const clash = why => Object.assign(new Error('Precondition failed: ' + why), { name: 'BlobPreconditionFailedError' });
   return (realStore = {
+    /* "etag" is the version of the file that this read saw. It is only ever handed back to write() below, so the shape is private to this file. */
     async read(path) {
       const { get } = await load();
       const r = await get(path, { access: 'private', useCache: false });
       if (!r || r.statusCode !== 200 || !r.stream) return { data: null, etag: null };
-      return { data: JSON.parse(await new Response(r.stream).text()), etag: r.blob.etag };
+      const raw = await new Response(r.stream).text();
+      return { data: JSON.parse(raw), etag: { seen: r.blob.etag, raw, lm: r.headers && r.headers.get ? r.headers.get('last-modified') : null } };
     },
-    async write(path, data, etag) {
-      const { put } = await load();
-      await put(path, JSON.stringify(data), {
-        access: 'private', contentType: 'application/json', allowOverwrite: !!etag, ...(etag ? { ifMatch: etag } : {})
-      });
+    async write(path, data, was) {
+      const { put, head, get } = await load();
+      const body = JSON.stringify(data), base = { access: 'private', contentType: 'application/json' };
+      if (!was) { await put(path, body, { ...base, allowOverwrite: false }); return; }      // first ever save: fails if somebody else created it a moment ago
+      /* The version tag that came with the download is not always the one the store wants back (the live site refused every save with "ETag mismatch").
+         So ask the store itself for the tag, which is what its own guide does. If the two disagree, make sure the file still says exactly what we read; if it does, nobody wrote in between. */
+      let h;
+      try { h = await head(path); }
+      catch (e) { if (e && e.name === 'BlobNotFoundError') throw clash('file vanished'); throw e; }
+      if (tagOf(h.etag) !== tagOf(was.seen) && !(await unchanged(get, path, h, was))) throw clash('changed since it was read');
+      try { await put(path, body, { ...base, allowOverwrite: true, ifMatch: h.etag }); }
+      catch (e) {
+        /* Last resort, so that a score is never lost to a tag the store will not accept: only when the file is still exactly what we read. */
+        if (!this.isConflict(e) || !(await unchanged(get, path, h, was))) throw e;
+        console.warn('[appl] the store refused its own version tag for ' + path + '; saving without it');
+        await put(path, body, { ...base, allowOverwrite: true });
+      }
     },
     isConflict(e) { return !!e && (e.name === 'BlobPreconditionFailedError' || /precondition|already exists|etag/i.test(String(e.message || ''))); }
   });
@@ -329,6 +356,17 @@ export function reply(res, out) {
   if (out.headers) Object.keys(out.headers).forEach(k => res.setHeader(k, out.headers[k]));
   res.end(out.body);
 }
+/* why the store said no, in one plain word the page can show: it turns the next "error 503" into something that can be acted on */
+export function storageWhy(name, msg) {
+  const s = String(name || '') + ' ' + String(msg || '');
+  if (/suspend|blocked|paused/i.test(s)) return 'suspended';                 // the store has been switched off (a free-plan allowance used up is the usual reason)
+  if (/RateLimited|rate limit|too many requests/i.test(s)) return 'busy';    // too many requests at once, for a moment
+  if (/quota|usage limit|limit|exceed/i.test(s)) return 'limit';             // an allowance is used up
+  if (/token|access denied|unauthori[sz]ed|forbidden|BlobAccess/i.test(s)) return 'token';   // the site cannot sign in to its store
+  if (/not found|NotFound|does not exist/i.test(s)) return 'missing';        // the store it is pointed at is gone
+  if (/not available|unavailable|fetch failed|ECONN|ENOTFOUND|ETIMEDOUT|network|timeout/i.test(s)) return 'down';   // the store could not be reached
+  return 'other';
+}
 export async function guarded(req, res, run) {
   try {
     if (req.method === 'POST') {
@@ -341,7 +379,7 @@ export async function guarded(req, res, run) {
     if (status === 500) {
       const name = String(e && e.name || ''), msg = String(e && e.message || '').replace(/\s+/g, ' ').slice(0, 300);
       console.error('[appl] ' + req.method + ' ' + String(req.url || '').split('?')[0] + ' failed: ' + name + ': ' + msg);   // this is the line to look for in the Vercel Logs
-      if (/^Blob/.test(name) || /blob|store|quota|limit|suspend|token/i.test(msg)) return reply(res, json(503, { error: 'storage' }));   // the score store itself is unavailable (for example a free-plan limit)
+      if (/^Blob/.test(name) || /blob|store|quota|limit|suspend|token/i.test(msg)) return reply(res, json(503, { error: 'storage', why: storageWhy(name, msg) }));   // the score store itself is unavailable (for example a free-plan limit)
     }
     return reply(res, json(status, { error: status === 500 ? 'server' : 'bad' }));
   }

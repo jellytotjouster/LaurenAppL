@@ -305,10 +305,10 @@
     catch (e) { return mem || (mem = hex(crypto.getRandomValues(new Uint8Array(24)))); }
   }
   function pid() { return crypto.subtle.digest('SHA-256', new TextEncoder().encode('appl-player:' + secret())).then(function (b) { return hex(new Uint8Array(b)).slice(0, 20); }); }
-  function fail(status, reason) { var e = new Error('api ' + status); e.status = status; e.reason = reason || ''; e.code = status === 400 ? 'invalid_argument' : status === 404 ? 'not_found' : status === 422 ? 'rejected' : 'unavailable'; return e; }
+  function fail(status, reason, why) { var e = new Error('api ' + status); e.status = status; e.reason = reason || ''; e.why = why || ''; e.code = status === 400 ? 'invalid_argument' : status === 404 ? 'not_found' : status === 422 ? 'rejected' : 'unavailable'; return e; }
   function call(path, body) {
     var o = body === undefined ? { cache: 'no-store' } : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) };
-    return fetch(API + path, o).then(function (r) { if (!r.ok) return r.json().then(function (b) { return b; }, function () { return {}; }).then(function (b) { throw fail(r.status, b && b.error); }); return r.json(); }, function () { throw fail(0); });
+    return fetch(API + path, o).then(function (r) { if (!r.ok) return r.json().then(function (b) { return b; }, function () { return {}; }).then(function (b) { throw fail(r.status, b && b.error, b && b.why); }); return r.json(); }, function () { throw fail(0); });
   }
   var listeners = [], rows = [], last = 0, busy = null, mine = null, lastFailed = false;
   function emit() {
@@ -6426,7 +6426,7 @@ void main() {
       else {
         saving = false; input.readOnly = false; $('#g-save-btn').disabled = false;
         if (mine === runId) {
-          const s = e && e.status, tag = s ? ' (error ' + s + ')' : '';
+          const s = e && e.status, w = e && (e.why || (e.reason === 'not set up' ? 'not set up' : '')), tag = s ? ' (error ' + s + (w ? ', ' + w : '') + ')' : '';
           let msg;
           if (e && e.code === 'rejected') msg = (e.reason === 'fast' ? 'That score is higher than is possible in the time the game took, so it was not added to the shared board.' : 'That game could not be checked, so its score was not added to the shared board. Play again and save that one.') + tag;
           else {
