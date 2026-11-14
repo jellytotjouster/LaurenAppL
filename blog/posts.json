@@ -46,18 +46,25 @@
    "body": "test"
   },
   {
-   "id": "pmwgjri4ey7mw",
-   "slug": "test-2",
-   "title": "Test 2",
+   "id": "pmwgvf0xeiqp5",
+   "slug": "test-3",
+   "title": "Test 3",
    "date": "2026-11-14",
-   "excerpt": "Test 2",
+   "excerpt": "Test 3",
    "tags": [],
-   "groups": [],
+   "groups": [
+    "relationships",
+    "personal",
+    "ai",
+    "animation",
+    "art",
+    "advocacy"
+   ],
    "pinned": false,
    "publishAt": "",
    "cover": "",
    "coverAlt": "",
-   "body": "Test 2"
+   "body": "Test 3"
   }
  ]
 }
