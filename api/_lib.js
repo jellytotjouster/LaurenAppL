@@ -331,6 +331,62 @@ async function blogMail(store, body) {
   return json(200, { ok: true, sent, failed, total: to.length });
 }
 
+/* ---------- automatic "new post" e-mails ----------
+   When a post goes live (written at /write, or published from the Blog Lab), the people who follow it get one e-mail, once.
+   "done" remembers which posts have had theirs. The very first time this runs it only notes the posts that are already live (so nobody is e-mailed about old posts),
+   a post is only e-mailed within about four days of its date, and a post marked noMail is never e-mailed. The owner can switch it off on the owner page. */
+const AUTO = 'data/autonotify.json', AUTO_KEEP = 400;
+let autoLast = 0, autoBusy = false;
+const teaserOf = p => { const t = String(p.excerpt || '').trim() || String(p.body || '').replace(/!\[[^\]]*\]\([^)]*\)/g, ' ').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/[*_#>`~]+/g, ' ').replace(/\s+/g, ' ').trim(); return t.length > 220 ? t.slice(0, 217).replace(/\s+\S*$/, '') + '…' : t; };
+async function livePostsForMail(store, now) {             // every post a visitor can read right now: the Lab's file plus the ones written at /write (those win by id)
+  let stat = null;
+  try {
+    const r = await (globalThis.__applPostsFetch ? globalThis.__applPostsFetch() : fetch(SITE_ORIGIN + '/blog/posts.json', { headers: { 'cache-control': 'no-cache' } }));
+    if (r && r.ok) { const j = await r.json(); stat = j && Array.isArray(j.posts) ? j.posts : null; }
+  } catch (e) { stat = null; }
+  if (!stat) return null;                                  // could not see the posts: do nothing rather than guess
+  const f = JSON.parse((await webFeed(store, now)).body), gone = new Set((f.deleted || []).map(String)), mine = new Set((f.posts || []).map(p => String(p.id)));
+  const due = p => p && p.id != null && !p.draft && !(p.publishAt && Date.parse(p.publishAt) > now);
+  return stat.filter(p => due(p) && !gone.has(String(p.id)) && !mine.has(String(p.id))).concat((f.posts || []).filter(due));
+}
+export async function autoNotify(store, now = Date.now(), force = false) {
+  if (!mailReady()) return { sent: 0, why: 'not-set-up' };
+  if (autoBusy || (!force && now - autoLast < 45000)) return { sent: 0, why: 'busy' };
+  autoBusy = true; autoLast = now;
+  try {
+    const st = (await store.read(AUTO)).data;
+    if (st && st.on === false) return { sent: 0, why: 'off' };
+    const posts = await livePostsForMail(store, now);
+    if (!posts) return { sent: 0, why: 'no-posts' };
+    const recent = p => /^\d{4}-\d{2}-\d{2}$/.test(String(p.date)) && Date.parse(p.date + 'T12:00:00Z') > now - 4 * 864e5;
+    const claimed = await update(store, AUTO, d0 => {
+      const d = d0 && typeof d0 === 'object' ? d0 : {}, done = d.done && typeof d.done === 'object' ? d.done : {};
+      if (d.on === false) return { out: [] };
+      if (!d.base) { posts.forEach(p => { done[String(p.id)] = now; }); return { next: { ...d, base: true, done }, out: [] }; }
+      const fresh = []; let changed = false;
+      posts.forEach(p => {
+        const id = String(p.id); if (done[id]) return;
+        if (p.noMail || !recent(p)) { done[id] = now; changed = true; return; }
+        if (fresh.length < 3) { fresh.push(p); done[id] = now; changed = true; }
+      });
+      if (!changed) return { out: [] };
+      const nd = {}; Object.keys(done).sort((a, b) => done[b] - done[a]).slice(0, AUTO_KEEP).forEach(k => { nd[k] = done[k]; });
+      return { next: { ...d, done: nd }, out: fresh };      // claimed before sending, so two visitors at once can never send it twice
+    });
+    let sent = 0; const results = [];
+    for (const p of claimed || []) {
+      const title = oneLine(p.title, 100) || 'a new post', tz = teaserOf(p), link = SITE_ORIGIN + '/#blog/' + encodeURIComponent(String(p.slug || ''));
+      const text = 'Hello,\n\nThere is a new post on Lozza’s Logic: ' + title + '\n\n' + (tz ? tz + '\n\n' : '') + 'Read it here: ' + link + '\n\nLauren x';
+      let r = { ok: false };
+      try { r = JSON.parse((await blogMail(store, { subject: 'New on Lozza’s Logic: ' + title, text, audience: 'match', groups: Array.isArray(p.groups) ? p.groups : [] })).body); } catch (e) { r = { ok: false }; }
+      if (r.ok === false || (r.failed && !r.sent)) { await update(store, AUTO, d => { if (!d || !d.done || !d.done[String(p.id)]) return null; delete d.done[String(p.id)]; return { next: d, out: 1 }; }); continue; }   // nothing went out: try again next time
+      sent += r.sent || 0; results.push({ id: String(p.id), title, at: now, sent: r.sent || 0, failed: r.failed || 0 });
+    }
+    if (results.length) await update(store, AUTO, d => ({ next: { ...(d || {}), last: results[results.length - 1] }, out: 1 }));
+    return { sent, posts: results };
+  } finally { autoBusy = false; }
+}
+
 /* ---------- crash reports: a short, anonymous note a phone sends when the page died on it (or ran far too slowly) ---------- */
 const REPORT_KEEP = 60;
 let rall = [];                                                 // when this server took its latest notes: at most 30 an hour in all, to protect the free storage allowance
@@ -503,16 +559,20 @@ export async function adminPost(store, body) {
   const act = body && body.action;
   if (act === 'ping') return json(200, { ok: true });
   if (act === 'list') {
-    const [s, n, rp, bl] = await Promise.all([store.read('data/scores.json'), store.read('data/notify.json'), store.read('data/reports.json'), store.read('data/blog.json')]);
+    const [s, n, rp, bl, au] = await Promise.all([store.read('data/scores.json'), store.read('data/notify.json'), store.read('data/reports.json'), store.read('data/blog.json'), store.read(AUTO)]);
     const subs = Object.values(n.data && n.data.subs || {}).filter(x => x && typeof x.email === 'string').map(x => ({ email: x.email, topics: x.topics || {}, at: x.at || 0 }));
     const scores = (s.data && Array.isArray(s.data.rows) ? s.data.rows : []).filter(validRow).sort(byRank).map(r => { const secs = Number.isFinite(r.secs) ? r.secs : 0; return { ...pub(r), secs, by: r.by === 'owner' ? 'owner' : '', flawless: secs ? flawless(secs) : 0, look: !!(secs || r.score >= 150) && looksOff(r.score, secs) }; });
     const reports = (rp.data && Array.isArray(rp.data.list) ? rp.data.list : []).filter(r => r && Number.isFinite(r.at) && Array.isArray(r.ev));
     const bb = blogData(bl.data), comments = [], stats = [];
     Object.keys(bb.posts).forEach(slug => { const r = bb.posts[slug] || {}; stats.push({ slug, v: r.v | 0, h: r.h | 0, t: r.t | 0 }); (Array.isArray(r.c) ? r.c : []).forEach(c => { if (c && typeof c.id === 'string') comments.push({ slug, id: c.id, n: String(c.n || ''), t: String(c.t || ''), at: c.at || 0, ok: !!c.ok }); }); });
     comments.sort((a, b) => (a.ok - b.ok) || b.at - a.at);
-    return json(200, { subs, scores, reports, comments, stats, mailReady: mailReady(), blogTopics: BLOG_TOPICS });
+    return json(200, { subs, scores, reports, comments, stats, mailReady: mailReady(), blogTopics: BLOG_TOPICS, auto: { on: !(au.data && au.data.on === false), last: au.data && au.data.last || null } });
   }
   if (act === 'blogMail') return blogMail(store, body);
+  if (act === 'autoSet' && typeof body.on === 'boolean') {
+    await update(store, AUTO, d => ({ next: { ...(d && typeof d === 'object' ? d : {}), on: body.on }, out: 1 }));
+    return json(200, { ok: true, on: body.on });
+  }
   if (act === 'removeSub' && typeof body.email === 'string') {
     await update(store, 'data/notify.json', d => { const subs = d && d.subs || {}; const k = body.email.trim().toLowerCase(); if (!subs[k]) return null; delete subs[k]; return { next: { subs }, out: 1 }; });
     return json(200, { ok: true });
@@ -591,7 +651,7 @@ function wpClean(p, now) {
   const pa = p.publishAt ? new Date(p.publishAt) : null, tags = [];
   (Array.isArray(p.tags) ? p.tags : []).forEach(t => { t = wpTag(t); if (t && !tags.includes(t) && tags.length < 15) tags.push(t); });
   const groups = [...new Set((Array.isArray(p.groups) ? p.groups : []).map(x => String(x).toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 24)).filter(x => x.length >= 2))].slice(0, 10);
-  return { id, slug: wpSlug(p.slug || title), title: title || 'Untitled', date, excerpt: oneLine(p.excerpt, 300), tags, groups, cover: wpPic(p.cover), coverAlt: oneLine(p.coverAlt, 200), body: cleanBlock(p.body, 60000), draft: !!p.draft, pinned: !!p.pinned, publishAt: pa && !isNaN(pa) ? pa.toISOString() : '', upd: now };
+  return { id, slug: wpSlug(p.slug || title), title: title || 'Untitled', date, excerpt: oneLine(p.excerpt, 300), tags, groups, cover: wpPic(p.cover), coverAlt: oneLine(p.coverAlt, 200), body: cleanBlock(p.body, 60000), draft: !!p.draft, noMail: !!p.noMail, pinned: !!p.pinned, publishAt: pa && !isNaN(pa) ? pa.toISOString() : '', upd: now };
 }
 const wpCache = { at: 0, data: null };
 export const forgetWeb = () => { wpCache.data = null; wpCache.at = 0; };
@@ -611,11 +671,13 @@ async function webAct(store, act, body) {
   const now = Date.now();
   if (act === 'wpList') {
     const d = wpData((await store.read(WP)).data);
-    return json(200, { ok: true, posts: Object.values(d.posts), deleted: d.deleted, groups: d.groups, mailReady: mailReady() });
+    const au = (await store.read(AUTO)).data;
+    return json(200, { ok: true, posts: Object.values(d.posts), deleted: d.deleted, groups: d.groups, mailReady: mailReady(), auto: !(au && au.on === false) });
   }
   if (act === 'wpSave') {
     const p = wpClean(body.post, now); if (!p) return json(400, { error: 'post' });
     p.draft = !body.publish;
+    if (body.publish) { try { await autoNotify(store, now, true); } catch (e) {} }   // first-ever run only notes what is already live, so this new post is not swallowed by it
     const out = await update(store, WP, d0 => {
       const d = wpData(d0);
       if (!d.posts[p.id] && Object.keys(d.posts).length >= WP_MAX) return { out: { full: true } };
@@ -628,7 +690,11 @@ async function webAct(store, act, body) {
     });
     forgetWeb();
     if (out && out.full) return json(409, { error: 'full' });
-    return json(200, { ok: true, post: out.post });
+    let mailed = 0;
+    if (!out.post.draft && !(out.post.publishAt && Date.parse(out.post.publishAt) > now)) {
+      try { const m = await autoNotify(store, now, true); mailed = (m.posts || []).filter(x => x.id === out.post.id).reduce((n, x) => n + x.sent, 0); } catch (e) { console.error('[appl] automatic e-mail failed: ' + String(e && e.message || e).slice(0, 200)); }
+    }
+    return json(200, { ok: true, post: out.post, mailed });
   }
   if (act === 'wpDelete') {
     const id = wpId(body.id); if (!id) return json(400, { error: 'id' });
