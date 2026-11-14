@@ -451,6 +451,8 @@ html[data-bn="c"] .bn-top { margin-inline: auto; }
 html[data-bn="c"] .bn-latest { margin-inline: 0; }
 .rb-msg { min-height: 1.3em; margin: 6px 0 0; }
 .rb-msg:empty { min-height: 0; margin: 0; }
+.bl-pin { color: #B52035; text-transform: uppercase; letter-spacing: .08em; font-size: .85em; }
+.bl-card.pinned { outline: 2px solid rgba(181,32,53,.35); outline-offset: 4px; }
 
 </style>
 </head>
@@ -2065,13 +2067,14 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
   function clean(list) {
     return (Array.isArray(list) ? list : []).filter(function (p) { return p && typeof p === 'object'; }).map(function (p) {
       return { id: String(p.id || p.slug || ''), slug: String(p.slug || slugify(p.title)), title: String(p.title || 'Untitled'), date: String(p.date || ''), excerpt: String(p.excerpt || ''),
-        tags: (Array.isArray(p.tags) ? p.tags : []).map(tagOf).filter(Boolean), cover: String(p.cover || ''), coverAlt: String(p.coverAlt || ''), body: String(p.body || ''), images: p.images && typeof p.images === 'object' ? p.images : {}, draft: !!p.draft };
+        tags: (Array.isArray(p.tags) ? p.tags : []).map(tagOf).filter(Boolean), cover: String(p.cover || ''), coverAlt: String(p.coverAlt || ''), body: String(p.body || ''), images: p.images && typeof p.images === 'object' ? p.images : {}, draft: !!p.draft, pinned: !!p.pinned, publishAt: String(p.publishAt || '') };
     });
   }
   function tagOf(t) { return String(t || '').toLowerCase().replace(/^#+/, '').replace(/[^a-z0-9]+/g, '').slice(0, 24); }
   function dnum(d) { var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(d || '')); return m ? m[3] + '/' + m[2] + '/' + m[1] : ''; }
+  function waiting(p) { var t = p.publishAt ? Date.parse(p.publishAt) : 0; return t > Date.now(); }       // scheduled for later: not shown until its time
   function visible(list) {
-    return list.filter(function (p) { return S.drafts || !p.draft; }).sort(function (a, b) { return (b.date || '').localeCompare(a.date || '') || a.title.localeCompare(b.title); });
+    return list.filter(function (p) { return S.drafts || (!p.draft && !waiting(p)); }).sort(function (a, b) { return (b.date || '').localeCompare(a.date || '') || a.title.localeCompare(b.title); });
   }
   function emit() { S.subs.forEach(function (f) { try { f(visible(S.posts || [])); } catch (e) {} }); }
   function load() {
@@ -2152,9 +2155,9 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
   }
   function cardHTML(p) {
     var c = img(p.cover, p);
-    return '<article class="bl-card' + (c ? '' : ' nocov') + '">' +
+    return '<article class="bl-card' + (c ? '' : ' nocov') + (p.pinned ? ' pinned' : '') + '">' +
       (c ? '<a class="cov" href="#blog/' + esc(p.slug) + '" tabindex="-1" aria-hidden="true"><img src="' + esc(c) + '" alt="" loading="lazy" decoding="async"></a>' : '') +
-      '<div class="txt"><span class="bl-date">' + esc(fmt(p.date)) + (p.draft ? ' · <b class="bl-draft">Draft</b>' : '') + '</span>' +
+      '<div class="txt"><span class="bl-date">' + (p.pinned ? '<b class="bl-pin">Pinned</b> · ' : '') + esc(fmt(p.date)) + (p.draft ? ' · <b class="bl-draft">Draft</b>' : '') + '</span>' +
       '<h2><a href="#blog/' + esc(p.slug) + '">' + esc(p.title) + '</a></h2><span class="ex">' + esc(blurb(p)) + '</span>' + tagsHTML(p) +
       '<span class="bl-foot"><a class="bl-more" href="#blog/' + esc(p.slug) + '">Read on →</a><span class="sts" data-slug="' + esc(p.slug) + '"></span></span></div></article>';
   }
@@ -2173,6 +2176,7 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
       all.forEach(function (p) { p.tags.forEach(function (t) { if (!counts[t]) { counts[t] = 0; order.push(t); } counts[t]++; }); });
       order.sort(function (a, b) { return counts[b] - counts[a] || a.localeCompare(b); });
       var ps = tag ? all.filter(function (p) { return p.tags.indexOf(tag) >= 0; }) : all;
+      ps = ps.filter(function (p) { return p.pinned; }).slice(0, 1).concat(ps.filter(function (p) { return !p.pinned; }));   // a pinned post sits at the very top of the list
       var chips = order.length ? '<nav class="tagbar" aria-label="Filter by hashtag"><a class="tag' + (tag ? '' : ' on') + '" href="#blog"' + (tag ? '' : ' aria-current="true"') + '>All <small>' + all.length + '</small></a>' +
         order.map(function (t) { return '<a class="tag' + (t === tag ? ' on' : '') + '" href="#blog/tag/' + t + '"' + (t === tag ? ' aria-current="true"' : '') + '>#' + t + ' <small>' + counts[t] + '</small></a>'; }).join('') + '</nav>' : '';
       box.innerHTML = '<div class="pg">' + head() + chips +
