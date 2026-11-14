@@ -13,6 +13,6 @@ export default async function handler(req, res) {
     const expected = process.env.ADMIN_KEY;
     if (!expected || expected.length < 16) return json(503, { error: 'not set up' });
     if (!adminOk(String(req.headers['x-admin-key'] || ''), expected)) { await new Promise(ok => setTimeout(ok, 700)); return json(401, { error: 'key' }); }
-    return adminPost(blobStore(), await readBody(req));
+    return adminPost(blobStore(), await readBody(req, 1300000));          // only after the key is right: a photo goes through here
   });
 }

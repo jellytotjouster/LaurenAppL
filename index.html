@@ -454,6 +454,47 @@ html[data-bn="c"] .bn-latest { margin-inline: 0; }
 .bl-pin { color: #B52035; text-transform: uppercase; letter-spacing: .08em; font-size: .85em; }
 .bl-card.pinned { outline: 2px solid rgba(181,32,53,.35); outline-offset: 4px; }
 
+.sub { margin: 18px 0; padding: 14px 16px; border: 1.5px dashed var(--line2); border-radius: 14px; display: grid; gap: 10px; justify-items: start; }
+.sub-lead { margin: 0; font-weight: 600; }
+.sub-f { width: 100%; display: grid; gap: 12px; }
+.sub-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.sub-row input[type=email] { flex: 1 1 220px; min-width: 0; font: inherit; padding: 11px 14px; border: 1px solid var(--line2); border-radius: 10px; background: #fff; color: var(--ink); }
+.sub-msg:empty { display: none; }
+.sub-t { border: 0; margin: 0; padding: 0; min-width: 0; display: grid; gap: 8px; }
+.sub-t legend { padding: 0; margin: 0 0 6px; font-weight: 600; font-size: .95em; }
+.sub-or { margin: 2px 0 0; font-size: .85em; color: var(--muted, inherit); }
+.sub-g { display: flex; flex-wrap: wrap; gap: 8px; }
+.sub-c { display: inline-flex; align-items: center; gap: 8px; width: fit-content; max-width: 100%; padding: 7px 13px; border: 1px solid var(--line2); border-radius: 99px; background: #fff; cursor: pointer; font-size: .95em; line-height: 1.2; }
+.sub-c input { width: 18px; height: 18px; margin: 0; accent-color: var(--ink); flex: none; }
+.sub-c:has(input:checked) { border-color: var(--ink); }
+.sub-c:has(input:disabled) { opacity: .5; cursor: default; }
+.sub-c:focus-within { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+/* find posts: search, sort, calendar, topics */
+.bl-tools { display: grid; gap: 12px; margin: 0 0 18px; }
+.bl-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.bl-find { flex: 1 1 220px; min-width: 0; }
+.bl-find input, .bl-row select { font: inherit; font-size: 16px; width: 100%; padding: 10px 14px; border: 1px solid var(--line2); border-radius: 99px; background: #fff; color: var(--ink); }
+.bl-row select { width: auto; max-width: 100%; }
+.bl-calb { font: inherit; font-weight: 600; padding: 10px 16px; border: 1px solid var(--line2); border-radius: 99px; background: #fff; color: var(--ink); cursor: pointer; }
+.bl-calb[aria-expanded="true"] { background: var(--ink); color: #fff; border-color: var(--ink); }
+.bl-topics { display: flex; flex-wrap: wrap; gap: 6px; }
+button.tag { font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.bl-ht summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--muted); padding: 2px 0 8px; }
+.bl-cal { max-width: 20rem; border: 1px solid var(--line2); border-radius: 14px; background: #fff; padding: 12px; }
+.bl-cal[hidden] { display: none; }
+.cal-h { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.cal-h .cn { font: inherit; font-size: 20px; line-height: 1; width: 36px; height: 36px; border: 1px solid var(--line2); border-radius: 50%; background: none; color: var(--ink); cursor: pointer; }
+.cal-h .cn:disabled { opacity: .3; cursor: default; }
+.cal-g { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; text-align: center; }
+.cal-g .dw { font-size: 11px; font-weight: 600; color: var(--muted); letter-spacing: .06em; }
+.cal-g .cd { position: relative; font: inherit; font-size: 14px; height: 36px; display: grid; place-items: center; border: 0; border-radius: 9px; background: none; color: var(--muted); }
+.cal-g button.cd.has { color: var(--ink); font-weight: 700; background: #F1EEE4; cursor: pointer; }
+.cal-g button.cd.has i { position: absolute; bottom: 4px; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.cal-g button.cd.on { background: var(--ink); color: #fff; }
+.cal-n { margin: 8px 0 0; font-size: 12.5px; color: var(--muted); }
+.bl-count { margin: 0 0 12px; } .bl-count a { color: inherit; }
+
 </style>
 </head>
 <body>
@@ -2004,7 +2045,15 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
     try { if (window.AppLBlog && AppLBlog.fit) AppLBlog.fit(); } catch (e) {}
   }
   document.documentElement.setAttribute('data-bl', LK);
-  var S = { posts: null, loading: null, drafts: false, tok: 0, subs: [] };
+  var S = { posts: null, groups: null, loading: null, drafts: false, tok: 0, subs: [] };
+  var TOPICS = [["relationships", "Relationships"], ["personal", "Personal"], ["ai", "AI"], ["animation", "Animation"], ["art", "Art"], ["advocacy", "Advocacy & law"]];            // the starting groups [id, label], used only if the posts file has no list of its own (blog_parts/topics.json)
+  /* the groups a subscriber can tick come with the posts (posts.json: "groups"); the Blog Lab is where Lauren makes and changes them */
+  function cleanGroups(list) {
+    if (!Array.isArray(list)) return null;
+    return list.filter(function (g) { return g && typeof g === 'object' && /^[a-z0-9]{2,24}$/.test(String(g.id)) && String(g.label || '').trim(); }).map(function (g) { return { id: String(g.id), label: String(g.label).trim().slice(0, 24) }; }).slice(0, 10);
+  }
+  function groups() { return S.groups || TOPICS.map(function (t) { return { id: t[0], label: t[1] }; }); }
+  function topicLabel(v) { var g = groups(); for (var i = 0; i < g.length; i++) if ('blog-' + g[i].id === v) return g[i].label; return v === 'blog' ? 'every new post' : String(v).slice(5); }
 
   function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
   function slugify(t) { return String(t || '').toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'post'; }
@@ -2067,10 +2116,11 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
   function clean(list) {
     return (Array.isArray(list) ? list : []).filter(function (p) { return p && typeof p === 'object'; }).map(function (p) {
       return { id: String(p.id || p.slug || ''), slug: String(p.slug || slugify(p.title)), title: String(p.title || 'Untitled'), date: String(p.date || ''), excerpt: String(p.excerpt || ''),
-        tags: (Array.isArray(p.tags) ? p.tags : []).map(tagOf).filter(Boolean), cover: String(p.cover || ''), coverAlt: String(p.coverAlt || ''), body: String(p.body || ''), images: p.images && typeof p.images === 'object' ? p.images : {}, draft: !!p.draft, pinned: !!p.pinned, publishAt: String(p.publishAt || '') };
+        tags: (Array.isArray(p.tags) ? p.tags : []).map(tagOf).filter(Boolean), groups: (Array.isArray(p.groups) ? p.groups : []).map(String).filter(function (x) { return /^[a-z0-9]{2,24}$/.test(x); }), cover: String(p.cover || ''), coverAlt: String(p.coverAlt || ''), body: String(p.body || ''), images: p.images && typeof p.images === 'object' ? p.images : {}, draft: !!p.draft, pinned: !!p.pinned, publishAt: String(p.publishAt || ''), upd: +p.upd || 0 };
     });
   }
   function tagOf(t) { return String(t || '').toLowerCase().replace(/^#+/, '').replace(/[^a-z0-9]+/g, '').slice(0, 24); }
+  function ldnDay(t) { try { var o = {}; new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(t)).forEach(function (x) { o[x.type] = x.value; }); return o.year + '-' + o.month + '-' + o.day; } catch (e) { return new Date(t).toISOString().slice(0, 10); } }       // dates are London dates
   function dnum(d) { var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(d || '')); return m ? m[3] + '/' + m[2] + '/' + m[1] : ''; }
   function waiting(p) { var t = p.publishAt ? Date.parse(p.publishAt) : 0; return t > Date.now(); }       // scheduled for later: not shown until its time
   function visible(list) {
@@ -2083,9 +2133,23 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
     S.loading = fetchFile();
     return S.loading;
   }
-  function fetchFile() {
-    return fetch('blog/posts.json').then(function (r) { return r.ok ? r.json() : { posts: [] }; }).catch(function () { return { posts: [] }; }).then(function (j) {
-      if (!S.posts) S.posts = clean(j && j.posts); emit(); return S.posts;
+  function getJ(u) { return fetch(u).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }); }
+  function fetchFile() {                                                   // the posts published from the Lab, plus the ones written on the go at /write (they win by id, and can hide one)
+    return Promise.all([getJ('blog/posts.json'), getJ('blog/feed.json')]).then(function (r) {
+      var j = r[0] || { posts: [] }, f = r[1] && Array.isArray(r[1].posts) ? r[1] : null;
+      if (!S.posts) {
+        var list = clean(j.posts);
+        if (f) {
+          var gone = {}, mine = {}; (Array.isArray(f.deleted) ? f.deleted : []).forEach(function (id) { gone[String(id)] = 1; });
+          var web = clean(f.posts); web.forEach(function (p) { mine[p.id] = 1; });
+          list = list.filter(function (p) { return !gone[p.id] && !mine[p.id]; }).concat(web);
+          var top = null; list.forEach(function (p) { if (p.pinned && (!top || p.upd > top.upd)) top = p; });          // only one post can be pinned: the newest pin
+          list.forEach(function (p) { if (p.pinned && p !== top) p.pinned = false; });
+        }
+        S.posts = list;
+      }
+      if (!S.groups) S.groups = cleanGroups(f && f.groups ? f.groups : j.groups);
+      emit(); return S.posts;
     });
   }
 
@@ -2151,7 +2215,7 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
 
   /* ---- the Blog page and a post ---- */
   function head() {
-    return '<header class="head bl-head"><h1 tabindex="-1" aria-label="' + NAME + ': ' + SUB + '"><img class="bl-t" src="' + IMG_H + '" alt=""></h1><p class="lede">Thoughts, art, tangents and whatever else falls out of my head. Newest first.</p></header>';
+    return '<header class="head bl-head"><h1 tabindex="-1" aria-label="' + NAME + ': ' + SUB + '"><img class="bl-t" src="' + IMG_H + '" alt=""></h1><p class="lede">Thoughts, art, tangents and whatever else falls out of my head.</p></header>';
   }
   function cardHTML(p) {
     var c = img(p.cover, p);
@@ -2167,27 +2231,123 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
       Eng.get(el.dataset.slug).then(function (r) { el.innerHTML = stat('eye', r.views, 'views') + stat('heart', r.heart, 'hearts') + stat('thumb', r.thumb, 'thumbs up'); });
     }); });
   }
+  /* ---- finding posts: search, topic, sort, calendar (kept while you read a post and come back) ---- */
+  S.v = { q: '', g: '', sort: 'new', day: '', ym: '' };
+  function hay(p) { return p._h || (p._h = (p.title + ' ' + p.excerpt + ' ' + plain(p.body) + ' ' + p.tags.join(' ') + ' ' + p.groups.map(function (id) { return groupName(id); }).join(' ')).toLowerCase()); }
+  function groupName(id) { var g = groups(); for (var i = 0; i < g.length; i++) if (g[i].id === id) return g[i].label; return id; }
+  function pick(all, tag) {
+    var v = S.v, terms = v.q.toLowerCase().split(/\s+/).filter(Boolean);
+    var ps = all.filter(function (p) {
+      if (tag && p.tags.indexOf(tag) < 0) return false;
+      if (v.g && p.groups.indexOf(v.g) < 0) return false;
+      if (v.day && String(p.date).slice(0, 10) !== v.day) return false;
+      var h = terms.length ? hay(p) : ''; for (var i = 0; i < terms.length; i++) if (h.indexOf(terms[i]) < 0) return false;
+      return true;
+    });
+    if (v.sort === 'old') ps = ps.slice().reverse();
+    return ps.filter(function (p) { return p.pinned; }).slice(0, 1).concat(ps.filter(function (p) { return !p.pinned; }));   // a pinned post sits at the very top
+  }
+  var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+  function calHTML(all) {
+    var by = {}, keys = []; all.forEach(function (p) { var d = String(p.date).slice(0, 10); if (/^\d{4}-\d{2}-\d{2}$/.test(d)) { if (!by[d]) { by[d] = 0; keys.push(d); } by[d]++; } });
+    if (!keys.length) return '<p class="muted small">No dated posts yet.</p>';
+    keys.sort(); var lo = keys[0].slice(0, 7), hi = keys[keys.length - 1].slice(0, 7);
+    var ym = S.v.ym || (S.v.day ? S.v.day.slice(0, 7) : hi); if (ym < lo) ym = lo; if (ym > hi) ym = hi; S.v.ym = ym;
+    var y = +ym.slice(0, 4), m = +ym.slice(5, 7) - 1, first = new Date(y, m, 1), off = (first.getDay() + 6) % 7, n = new Date(y, m + 1, 0).getDate();
+    var cells = ''; for (var i = 0; i < off; i++) cells += '<span></span>';
+    for (var d = 1; d <= n; d++) {
+      var key = y + '-' + pad2(m + 1) + '-' + pad2(d), c = by[key] || 0;
+      cells += c ? '<button type="button" class="cd has' + (S.v.day === key ? ' on' : '') + '" data-day="' + key + '" aria-pressed="' + (S.v.day === key) + '" aria-label="' + d + ' ' + MONTHS[m] + ' ' + y + ': ' + c + (c > 1 ? ' posts' : ' post') + '">' + d + '<i></i></button>' : '<span class="cd">' + d + '</span>';
+    }
+    return '<div class="cal-h"><button type="button" class="cn" data-mv="-1" aria-label="Previous month"' + (ym <= lo ? ' disabled' : '') + '>‹</button><b aria-live="polite">' + MONTHS[m] + ' ' + y + '</b><button type="button" class="cn" data-mv="1" aria-label="Next month"' + (ym >= hi ? ' disabled' : '') + '>›</button></div>' +
+      '<div class="cal-g" role="group" aria-label="Posts by day"><span class="dw">Mo</span><span class="dw">Tu</span><span class="dw">We</span><span class="dw">Th</span><span class="dw">Fr</span><span class="dw">Sa</span><span class="dw">Su</span>' + cells + '</div>' +
+      '<p class="cal-n">Days with a dot have a post. Tap one to see it.</p>';
+  }
   function renderList(box, tag) {
     var tok = ++S.tok; tag = tagOf(tag);
     box.innerHTML = '<div class="pg">' + head() + '<p class="muted small">Gathering the ramblings…</p></div>';
     load().then(function () {
       if (tok !== S.tok) return;
-      var all = visible(S.posts), counts = {}, order = [];
-      all.forEach(function (p) { p.tags.forEach(function (t) { if (!counts[t]) { counts[t] = 0; order.push(t); } counts[t]++; }); });
+      var all = visible(S.posts), counts = {}, order = [], gcount = {};
+      all.forEach(function (p) { p.tags.forEach(function (t) { if (!counts[t]) { counts[t] = 0; order.push(t); } counts[t]++; }); p.groups.forEach(function (id) { gcount[id] = (gcount[id] || 0) + 1; }); });
       order.sort(function (a, b) { return counts[b] - counts[a] || a.localeCompare(b); });
-      var ps = tag ? all.filter(function (p) { return p.tags.indexOf(tag) >= 0; }) : all;
-      ps = ps.filter(function (p) { return p.pinned; }).slice(0, 1).concat(ps.filter(function (p) { return !p.pinned; }));   // a pinned post sits at the very top of the list
-      var chips = order.length ? '<nav class="tagbar" aria-label="Filter by hashtag"><a class="tag' + (tag ? '' : ' on') + '" href="#blog"' + (tag ? '' : ' aria-current="true"') + '>All <small>' + all.length + '</small></a>' +
-        order.map(function (t) { return '<a class="tag' + (t === tag ? ' on' : '') + '" href="#blog/tag/' + t + '"' + (t === tag ? ' aria-current="true"' : '') + '>#' + t + ' <small>' + counts[t] + '</small></a>'; }).join('') + '</nav>' : '';
-      box.innerHTML = '<div class="pg">' + head() + chips +
+      var v = S.v, gl = groups().filter(function (g) { return gcount[g.id]; });
+      if (v.g && !gcount[v.g]) v.g = '';
+      var chips = order.length ? '<details class="bl-ht"' + (tag ? ' open' : '') + '><summary>Hashtags</summary><nav class="tagbar" aria-label="Filter by hashtag"><a class="tag' + (tag ? '' : ' on') + '" href="#blog"' + (tag ? '' : ' aria-current="true"') + '>All <small>' + all.length + '</small></a>' +
+        order.map(function (t) { return '<a class="tag' + (t === tag ? ' on' : '') + '" href="#blog/tag/' + t + '"' + (t === tag ? ' aria-current="true"' : '') + '>#' + t + ' <small>' + counts[t] + '</small></a>'; }).join('') + '</nav></details>' : '';
+      var topics = gl.length ? '<div class="bl-topics" role="group" aria-label="Filter by topic"><button type="button" class="tag' + (v.g ? '' : ' on') + '" data-g="">All topics</button>' + gl.map(function (g) { return '<button type="button" class="tag' + (v.g === g.id ? ' on' : '') + '" data-g="' + g.id + '" aria-pressed="' + (v.g === g.id) + '">' + esc(g.label) + ' <small>' + gcount[g.id] + '</small></button>'; }).join('') + '</div>' : '';
+      box.innerHTML = '<div class="pg">' + head() +
+        '<div class="bl-tools"><div class="bl-row"><div class="bl-find"><label class="sr" for="bl-q">Search all posts</label><input id="bl-q" type="search" placeholder="Search every post for a word…" autocomplete="off" enterkeyhint="search"></div>' +
+        '<label class="sr" for="bl-sort">Sort posts</label><select id="bl-sort"><option value="new">Newest first</option><option value="old">Oldest first</option></select>' +
+        '<button type="button" class="bl-calb" id="bl-calb" aria-expanded="' + (v.day ? 'true' : 'false') + '" aria-controls="bl-cal">Calendar</button></div>' +
+        '<div id="bl-cal" class="bl-cal"' + (v.day ? '' : ' hidden') + '></div>' + topics + chips + '</div>' +
+        subHTML('Want to know when there is a new one?') +
         (tag ? '<p class="bl-filter">Showing <b>#' + esc(tag) + '</b> · <a href="#blog">show everything</a></p>' : '') +
-        (ps.length ? '<div class="bl-list">' + ps.map(cardHTML).join('') + '</div>' : '<p class="bl-empty">' + (tag ? 'Nothing is tagged #' + esc(tag) + ' yet.' : 'Nothing here yet. The first ramble is on its way.') + '</p>') + '</div>';
-      document.title = NAME + ' · LaurenAppL'; fillStats(box);
+        '<p class="bl-count muted small" id="bl-count" role="status" aria-live="polite"></p><div id="bl-res"></div></div>';
+      var $ = function (id) { return box.querySelector(id); }, q = $('#bl-q'), so = $('#bl-sort'), cal = $('#bl-cal');
+      q.value = v.q; so.value = v.sort;
+      function paint() {
+        var ps = pick(all, tag), bits = [];
+        if (v.q.trim()) bits.push('matching “' + esc(v.q.trim()) + '”'); if (v.g) bits.push('in ' + esc(groupName(v.g))); if (v.day) bits.push('from ' + esc(fmt(v.day)));
+        $('#bl-count').innerHTML = (ps.length + (ps.length === 1 ? ' post' : ' posts')) + (bits.length ? ' ' + bits.join(', ') + ' · <a href="#blog" class="bl-clear">clear all</a>' : '');
+        $('#bl-res').innerHTML = ps.length ? '<div class="bl-list">' + ps.map(cardHTML).join('') + '</div>' : '<p class="bl-empty">' + (bits.length || tag ? 'Nothing matches that. Try fewer words, or clear the filters.' : 'Nothing here yet. The first ramble is on its way.') + '</p>';
+        fillStats($('#bl-res'));
+        Array.prototype.forEach.call(box.querySelectorAll('.bl-topics .tag'), function (b) { var on = b.getAttribute('data-g') === v.g; b.classList.toggle('on', on); if (b.hasAttribute('aria-pressed')) b.setAttribute('aria-pressed', on); });
+        if (!cal.hidden) cal.innerHTML = calHTML(all);
+      }
+      q.addEventListener('input', function () { v.q = q.value; paint(); });
+      so.addEventListener('change', function () { v.sort = so.value === 'old' ? 'old' : 'new'; paint(); });
+      $('#bl-calb').addEventListener('click', function () { cal.hidden = !cal.hidden; this.setAttribute('aria-expanded', String(!cal.hidden)); if (!cal.hidden) cal.innerHTML = calHTML(all); });
+      cal.addEventListener('click', function (e) {
+        var d = e.target.closest ? e.target.closest('[data-day]') : null, n = e.target.closest ? e.target.closest('[data-mv]') : null;
+        if (d) { v.day = v.day === d.getAttribute('data-day') ? '' : d.getAttribute('data-day'); paint(); }
+        else if (n && !n.disabled) { var t = v.ym || ''; var y = +t.slice(0, 4), m = +t.slice(5, 7) - 1 + (+n.getAttribute('data-mv')); var z = new Date(y, m, 1); v.ym = z.getFullYear() + '-' + pad2(z.getMonth() + 1); cal.innerHTML = calHTML(all); }
+      });
+      Array.prototype.forEach.call(box.querySelectorAll('.bl-topics'), function (w) { w.addEventListener('click', function (e) { var b = e.target.closest ? e.target.closest('[data-g]') : null; if (b) { v.g = b.getAttribute('data-g'); paint(); } }); });
+      box.addEventListener('click', function (e) { var c = e.target.closest ? e.target.closest('.bl-clear') : null; if (c) { v.q = ''; v.g = ''; v.day = ''; q.value = ''; if (!tag) { e.preventDefault(); paint(); } } });
+      document.title = NAME + ' · LaurenAppL'; wireSub(box); paint();
+    });
+  }
+  /* ---- "email me new posts": one small box on the blog page and under every post ---- */
+  var subN = 0;
+  function subHTML(lead, pre) {
+    var id = 'sb' + (++subN); pre = pre || [];
+    var gs = groups(), boxes = gs.map(function (g) { return '<label class="sub-c"><input type="checkbox" value="blog-' + g.id + '"' + (pre.indexOf(g.id) >= 0 ? ' checked' : '') + '><span>' + esc(g.label) + '</span></label>'; }).join('');
+    return '<div class="sub"><p class="sub-lead">' + lead + '</p><button type="button" class="btn sub-b" aria-expanded="false" aria-controls="' + id + '">Subscribe for new posts</button>' +
+      '<form class="sub-f" id="' + id + '" hidden novalidate><fieldset class="sub-t"><legend>Which posts do you want an email about?</legend>' +
+      '<label class="sub-c"><input type="checkbox" class="sub-all" value="blog"><span>Every new post</span></label>' + (gs.length ? '<p class="sub-or">or just these:</p><div class="sub-g">' + boxes + '</div>' : '') + '</fieldset>' +
+      '<div class="sub-row"><label class="sr" for="' + id + '-e">Your email</label><input type="email" id="' + id + '-e" autocomplete="email" placeholder="you@example.com" maxlength="120">' +
+      '<input class="hp" type="text" name="website" tabindex="-1" autocomplete="off" aria-hidden="true"><button type="submit" class="btn">Subscribe</button></div>' +
+      '<p class="muted small">I will only email you about the kinds of post you tick, and every email has a link to change that or stop them. <a href="#privacy">Privacy</a></p><p class="muted small sub-msg" role="status"></p></form></div>';
+  }
+  var SUBERR = { email: 'That does not look like an email address. Please check it.', pick: 'Please tick at least one, so I know which posts to tell you about.', slow: 'That is a lot at once. Give it a little while and try again.', full: 'The list is full at the moment. Please try again later.', net: 'That did not go through. Check your connection and try again.' };
+  function wireSub(box) {
+    Array.prototype.forEach.call(box.querySelectorAll('.sub'), function (w) {
+      var b = $q('.sub-b', w), f = $q('.sub-f', w), msg = $q('.sub-msg', w), all = $q('.sub-all', f), cbs = Array.prototype.slice.call(f.querySelectorAll('.sub-g input'));
+      if (S.subbed) { f.hidden = true; b.hidden = true; $q('.sub-lead', w).textContent = 'Thank you! You are on the list for new posts.'; return; }
+      function sync() { cbs.forEach(function (c) { c.disabled = all.checked; if (all.checked) c.checked = false; }); }
+      all.addEventListener('change', sync);
+      b.addEventListener('click', function () { f.hidden = false; b.hidden = true; b.setAttribute('aria-expanded', 'true'); $q('input[type=email]', f).focus(); });
+      f.addEventListener('submit', function (e) {
+        e.preventDefault(); var em = $q('input[type=email]', f).value.trim(), go = $q('button[type=submit]', f);
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(em) || em.length > 120) { msg.textContent = SUBERR.email; return; }
+        var on = cbs.filter(function (c) { return c.checked; }), topics = all.checked ? ['blog'] : on.map(function (c) { return c.value; });
+        if (!topics.length) { msg.textContent = SUBERR.pick; return; }
+        if (f.website.value) return;
+        var names = on.map(function (c) { return topicLabel(c.value); }).join(', ');
+        if (LAB) { msg.textContent = 'In the Lab nothing is saved. On the site, ' + em + (all.checked ? ' would now get an email about every new post.' : ' would now get an email about new posts on ' + names + '.'); return; }
+        go.disabled = true; msg.textContent = 'Saving…';
+        fetch('api/notify', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: em, topics: topics, website: '' }) }).then(function (r) {
+          return r.json().catch(function () { return {}; }).then(function (j) { if (!r.ok) { var x = new Error('sub'); x.code = (j && j.error) || 'net'; throw x; } });
+        }).then(function () { S.subbed = true; f.hidden = true; b.hidden = true; $q('.sub-lead', w).textContent = 'Thank you! I will email ' + em + (all.checked ? ' about every new post.' : ' when there is a new post about ' + names + '.'); },
+          function (x) { go.disabled = false; msg.textContent = SUBERR[x.code] || SUBERR.net; });
+      });
     });
   }
   function commentsHTML(r) {
     var list = r.comments.map(function (c) {
-      return '<li><b>' + esc(c.n) + '</b> <small>' + esc(dnum(c.d || (c.at ? new Date(c.at).toISOString() : ''))) + (c.pending ? ' · <i class="wait-chip">Waiting for approval</i>' : '') + '</small><p>' + esc(c.t).replace(/\n/g, '<br>') + '</p></li>';
+      return '<li><b>' + esc(c.n) + '</b> <small>' + esc(dnum(c.d || (c.at ? ldnDay(c.at) : ''))) + (c.pending ? ' · <i class="wait-chip">Waiting for approval</i>' : '') + '</small><p>' + esc(c.t).replace(/\n/g, '<br>') + '</p></li>';
     }).join('');
     return list ? '<ul class="cl">' + list + '</ul>' : '<p class="muted small">No comments yet. Be the first.</p>';
   }
@@ -2214,12 +2374,13 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
           '<label for="cm-text">Comment</label><textarea id="cm-text" rows="4" maxlength="1000" required></textarea>' +
           '<input class="hp" type="text" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">' +
           '<p class="muted small" id="cm-msg">Be kind. Comments are checked before they show for everyone.</p><button class="btn" type="submit">Post comment</button></form></div></details>' +
+        subHTML('Enjoyed this? Get an email when the next one is up.', p.groups) +
         '<nav class="pnav" aria-label="More ramblings">' +
           (newer ? '<a class="nx" href="#blog/' + esc(newer.slug) + '"><small>Newer</small><span>' + esc(newer.title) + '</span></a>' : '<span></span>') +
           (older ? '<a class="nx r" href="#blog/' + esc(older.slug) + '"><small>Older</small><span>' + esc(older.title) + '</span></a>' : '<span></span>') +
         '</nav>' +
         '<p class="pend"><a class="btn" href="#blog">All the ramblings</a></p></article></div>';
-      document.title = p.title + ' · LaurenAppL';
+      document.title = p.title + ' · LaurenAppL'; wireSub(box);
       function paint(r) {
         $q('#ps-top', box).innerHTML = stat('eye', r.views, 'views') + stat('heart', r.heart, 'hearts') + stat('thumb', r.thumb, 'thumbs up');
         ['heart', 'thumb'].forEach(function (k) { var b = $q('.rb[data-k=' + k + ']', box); b.querySelector('b').textContent = r[k]; b.setAttribute('aria-pressed', String(!!r.mine[k])); });
@@ -2276,8 +2437,8 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
   }
   function fillNote(ps) {
     var n = document.querySelector('.hero .bn-latest'); if (!n) return;
-    var p = ps[0]; if (!p) { n.hidden = true; n.textContent = ''; return; }
-    n.hidden = false; n.innerHTML = 'Latest post: <b>' + esc(dnum(p.date)) + '</b>';   // always the newest published post
+    var p = ps[0];
+    n.hidden = false; n.innerHTML = p ? 'Latest post: <b>' + esc(dnum(p.date)) + '</b>' : 'Latest post: <b>coming soon</b>';   // always the newest published post
     fit();
   }
   function fit() {                                                    // sit under the washing line, whatever size the screen is
@@ -6314,6 +6475,7 @@ void main() {
 <li><strong>When you ask me to tell you something</strong> (when an original goes on sale, when the animations are up, or if I start framing). Your email address and what you asked about. I use them only to send you that message, then I delete them, or sooner if you ask. The list is kept privately and only I can see it.</li>
 <li><strong>When you save a score in the game.</strong> The name you type and your score. They appear on the public High scores board, so use a nickname if you would rather not use your own. Your browser also keeps a random code that lets you update your own entry and no one else’s; it is not linked to anything else. Email me and I’ll remove your entry.</li>
 <li><strong>When you read or comment on the blog (Lozza’s Logic).</strong> Views, hearts and thumbs up are only counted; nothing in the count says who you are. If you leave a comment, I keep the name you type (or “Anonymous”) and what you write. I read every comment before it can show; once it does, it is public with that name beside it, so use a nickname if you would rather not use your own. Email me and I’ll remove it.</li>
+<li><strong>When you subscribe to blog updates.</strong> I keep the email address you give, which kinds of post you ticked, and the date, only to email you when there is a new post of a kind you chose. Every email has a link to change your choices or to stop them, and stopping removes your address from the blog list. I use an email service to send them, and it sees your address for that. Your agreement is the reason in law, and you can take it back at any time by using that link or emailing me.</li>
 <li><strong>When you visit.</strong> I count visits with Vercel Web Analytics. It sets no cookies and does not follow you from site to site. It records which page or artwork was looked at, the country you are in, your type of device and browser, and which site sent you here. Nothing in it says who you are, and only I can see the totals.</li>
 <li><strong>When the site crashes or runs far too slowly on your phone.</strong> A short, anonymous note is sent: your phone’s browser and system version, its screen size and what the page was doing just before it stopped. Nothing in it says who you are, and I keep only the latest sixty. I use it to find and fix the problem.</li>
 </ul>
@@ -6326,6 +6488,7 @@ void main() {
 <li><strong>Vercel</strong> hosts this website, keeps the High scores, blog counts and comments and sign-up lists, and counts visits for me. Like any web host, it sees the technical details of each visit, such as your IP address.</li>
 <li><strong>Google Fonts</strong> supplies the lettering. Opening a page asks Google to send the fonts, which tells Google your IP address.</li>
 <li><strong>Apple (iCloud Mail)</strong> carries my email.</li>
+<li><strong>Resend</strong> sends the blog update emails to people who have subscribed, and sees their address for that.</li>
 <li><strong>Royal Mail or another carrier</strong> is given your name and address to deliver your parcel.</li>
 </ul>
 <p>Some of these are based outside the UK, in the USA in particular. Where that is so, they rely on the safeguards UK law provides for sending data abroad.</p>

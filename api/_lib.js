@@ -210,7 +210,12 @@ export async function scoresPost(store, body, now = Date.now(), ip = '') {
 
 /* ---------- "tell me" sign-ups ---------- */
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
-const TOPIC_RE = /^(animations|originals|frames|work-\d{1,3})$/;
+const TOPIC_RE = /^(animations|originals|frames|blog|blog-[a-z0-9]{2,24}|work-\d{1,3})$/;
+/* What a blog subscriber can tick. 'blog' on its own means every new post; 'blog-art' means posts in the Art group, and so on. These five are only the starting groups (and the labels used if the site's own list cannot be read): the real list is the groups in blog/posts.json, which Lauren changes in the Blog Lab. The starting list is blog_parts/topics.json; a test keeps the two in step. */
+export const BLOG_TOPICS = [['relationships', 'Relationships'], ['personal', 'Personal'], ['ai', 'AI'], ['animation', 'Animation'], ['art', 'Art'], ['advocacy', 'Advocacy & law']];
+const BLOG_RE = /^(blog|blog-[a-z0-9]{2,24})$/;
+const blogLabel = t => t === 'blog' ? 'Every new post' : ((BLOG_TOPICS.find(x => 'blog-' + x[0] === t) || [])[1] || (String(t).charAt(5).toUpperCase() + String(t).slice(6)));
+const escH = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const seen = new Map();                                       // best-effort brake per visitor address (it resets when the function restarts; the real limit is the 5,000 cap)
 function tooMany(ip, now) {
   if (!ip) return false;
@@ -222,10 +227,12 @@ function tooMany(ip, now) {
 }
 export async function notifyPost(store, body, ip, now = Date.now()) {
   if (!body || typeof body !== 'object') return json(400, { error: 'bad' });
+  if (body.unsub && typeof body.unsub === 'object') return notifyPrefs(store, body.unsub.u, body.unsub.t, body.unsub.topics);
+  if (body.website) return json(200, { ok: true });                                  // the hidden field only a bot fills in: look as if it worked
   const email = String(body.email == null ? '' : body.email).trim();
   if (!EMAIL_RE.test(email) || email.length > 120) return json(400, { error: 'email' });
   const raw = Array.isArray(body.topics) ? body.topics : body.topics && typeof body.topics === 'object' ? Object.keys(body.topics) : body.topic ? [body.topic] : [];
-  const topics = Array.from(new Set(raw.map(String))).filter(t => TOPIC_RE.test(t)).slice(0, 6);
+  const topics = Array.from(new Set(raw.map(String))).filter(t => TOPIC_RE.test(t)).slice(0, 12);
   if (!topics.length) return json(400, { error: 'topic' });
   if (tooMany(ip, now)) return json(429, { error: 'slow' });
   const key = email.toLowerCase();
@@ -240,6 +247,88 @@ export async function notifyPost(store, body, ip, now = Date.now()) {
   });
   if (out.full) return json(503, { error: 'full' });
   return json(200, { ok: true });
+}
+
+/* ---------- blog e-mails: the link at the bottom of every e-mail, and the owner's "tell them about a new post" button ----------
+   The link carries the address and a signature only this site can make (from the owner key), so nobody can unsubscribe somebody else by guessing.
+   A link in an e-mail can be opened by a mail scanner, so opening it only shows a button; the button is what unsubscribes. */
+const SITE_ORIGIN = 'https://laurenappl.com';
+const b64u = s => Buffer.from(String(s), 'utf8').toString('base64url');
+export const unsubSig = email => { const k = process.env.ADMIN_KEY; return typeof k === 'string' && k.length >= 16 ? crypto.createHmac('sha256', k).update('unsub:' + String(email).toLowerCase()).digest('hex').slice(0, 32) : ''; };
+export const unsubLink = email => SITE_ORIGIN + '/api/notify?u=' + b64u(String(email).toLowerCase()) + '&t=' + unsubSig(email);
+const fromB64u = u => { try { return Buffer.from(String(u), 'base64url').toString('utf8'); } catch (e) { return ''; } };
+export async function notifyPrefs(store, u, t, topics) {                    // no topics = stop every blog e-mail; a list = those are now the only blog topics this person follows
+  const email = fromB64u(u).trim().toLowerCase(), sig = unsubSig(email);
+  if (!EMAIL_RE.test(email) || !sig || typeof t !== 'string' || !same(t, sig)) return json(400, { error: 'link' });
+  let want = null;
+  if (topics !== undefined) {
+    if (!Array.isArray(topics)) return json(400, { error: 'topic' });
+    want = Array.from(new Set(topics.map(String))).filter(x => BLOG_RE.test(x)).slice(0, 12);
+    if (!want.length) return json(400, { error: 'topic' });
+    if (want.includes('blog')) want = ['blog'];
+  }
+  const now = Date.now();
+  const out = await update(store, 'data/notify.json', d => {
+    const subs = d && d.subs && typeof d.subs === 'object' ? d.subs : {}, cur = subs[email];
+    if (!cur || !cur.topics) return { out: want ? 'gone' : 'ok' };
+    const had = Object.keys(cur.topics).filter(k => BLOG_RE.test(k));
+    if (!want && !had.length) return { out: 'ok' };
+    had.forEach(k => { if (!want || !want.includes(k)) delete cur.topics[k]; });
+    (want || []).forEach(k => { if (!(k in cur.topics)) cur.topics[k] = now; });
+    if (!Object.keys(cur.topics).length) delete subs[email];
+    return { next: { subs }, out: 'ok' };
+  });
+  if (out === 'gone') return json(404, { error: 'gone' });
+  return json(200, { ok: true });
+}
+export async function prefsPage(store, u, t) {
+  const email = fromB64u(u).trim().toLowerCase(), sig = unsubSig(email);
+  const ok = EMAIL_RE.test(email) && !!sig && typeof t === 'string' && same(t, sig);
+  let have = [];
+  if (ok) { const n = await store.read('data/notify.json'); const cur = n.data && n.data.subs && n.data.subs[email]; have = cur && cur.topics ? Object.keys(cur.topics).filter(k => BLOG_RE.test(k)) : []; }
+  const every = have.includes('blog');
+  const opts = BLOG_TOPICS.map(x => 'blog-' + x[0]).concat(have.filter(k => k !== 'blog' && !BLOG_TOPICS.some(x => 'blog-' + x[0] === k)));
+  const box = k => `<label class="c"><input type="checkbox" data-t="${escH(k)}"${have.includes(k) && !every ? ' checked' : ''}${every ? ' disabled' : ''}> <span>${escH(blogLabel(k))}</span></label>`;
+  const inner = !ok ? '<p>That link did not work. Please reply to any of my emails and I will sort it out.</p>'
+    : !have.length ? '<p>You are not on the blog list at the moment.</p><p><a href="https://laurenappl.com/#blog">Sign up again on the blog</a></p>'
+    : `<p class="s">Emails for <b>${escH(email)}</b></p><fieldset><legend>Which posts do you want an email about?</legend><label class="c"><input type="checkbox" id="all"${every ? ' checked' : ''}> <span>Every new post</span></label><div class="g">${opts.map(box).join('')}</div></fieldset><p><button id="save" type="button">Save my choices</button></p><p><button id="stop" class="l" type="button">Stop all blog emails</button></p>`;
+  const page = `<!doctype html><html lang="en-GB"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Your blog emails</title><style>body{font:17px/1.5 system-ui,sans-serif;background:#FBFAF6;color:#15171A;margin:0;padding:40px 20px;text-align:center}main{max-width:34rem;margin:0 auto}h1{font-weight:600}.s{color:#5D5E5A;overflow-wrap:anywhere}fieldset{border:0;margin:18px 0;padding:0}legend{font-weight:600;margin:0 auto 10px}.g{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:8px}.c{display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border:1px solid #BDB8A8;border-radius:99px;background:#fff;cursor:pointer}.c input{width:18px;height:18px;accent-color:#15171A;margin:0}button{font:inherit;font-weight:600;padding:12px 22px;border-radius:99px;border:1px solid #15171A;background:#15171A;color:#FBFAF6;cursor:pointer}button.l{background:none;color:#15171A;font-weight:500}button:disabled{opacity:.5}a{color:inherit}</style></head><body><main><h1>Lozza’s Logic</h1><div id="w">${inner}</div><p id="m" role="status"></p><p><a href="https://laurenappl.com/#blog">Back to the blog</a></p></main><script>var u=${JSON.stringify(String(u || '')).replace(/</g, '\\u003c')},tk=${JSON.stringify(String(t || '')).replace(/</g, '\\u003c')};function $(i){return document.getElementById(i)}function say(x){$('m').textContent=x}
+var all=$('all'),boxes=[].slice.call(document.querySelectorAll('input[data-t]'));function sync(){boxes.forEach(function(b){b.disabled=all.checked;if(all.checked)b.checked=false})}
+if(all){all.onchange=sync;sync()}
+fetch('/blog/posts.json',{cache:'no-store'}).then(function(r){return r.json()}).then(function(j){
+if(!j||!Array.isArray(j.groups)||!$('all'))return;var ids={},g=document.querySelector('.g');
+j.groups.forEach(function(x){if(!x||!/^[a-z0-9]{2,24}$/.test(String(x.id)))return;ids['blog-'+x.id]=1;var b=document.querySelector('input[data-t="blog-'+x.id+'"]');
+if(b){b.parentNode.querySelector('span').textContent=String(x.label).slice(0,24)}else{var l=document.createElement('label'),i=document.createElement('input'),sp=document.createElement('span');l.className='c';i.type='checkbox';i.setAttribute('data-t','blog-'+x.id);i.disabled=all.checked;sp.textContent=String(x.label).slice(0,24);l.appendChild(i);l.appendChild(document.createTextNode(' '));l.appendChild(sp);g.appendChild(l);boxes.push(i)}});
+boxes.slice().forEach(function(b){var k=b.getAttribute('data-t');if(!ids[k]&&!b.checked){b.parentNode.parentNode.removeChild(b.parentNode);boxes.splice(boxes.indexOf(b),1)}})}).catch(function(){});
+function send(topics,ok){var d={u:u,t:tk};if(topics)d.topics=topics;[$('save'),$('stop')].forEach(function(b){b.disabled=true});fetch('/api/notify',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({unsub:d})}).then(function(r){[$('save'),$('stop')].forEach(function(b){b.disabled=false});if(r.ok)ok();else say(r.status===404?'You are not on the list any more.':'That did not work. Please try again.')}).catch(function(){[$('save'),$('stop')].forEach(function(b){b.disabled=false});say('That did not go through. Please try again.')})}
+if($('save')){$('save').onclick=function(){var t2=all.checked?['blog']:boxes.filter(function(b){return b.checked}).map(function(b){return b.getAttribute('data-t')});if(!t2.length){say('Tick at least one, or choose “Stop all blog emails”.');return}var names=all.checked?'every new post':boxes.filter(function(b){return b.checked}).map(function(b){return b.parentNode.textContent.trim()}).join(', ');send(t2,function(){say('Saved. You will get emails about: '+names+'.')})};$('stop').onclick=function(){send(null,function(){$('w').hidden=true;say('Done. You will not get any more emails about new posts.')})}}</script></body></html>`;
+  return { status: 200, type: 'text/html; charset=utf-8', body: page, headers: { 'X-Robots-Tag': 'noindex, nofollow', 'Referrer-Policy': 'no-referrer', 'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'" } };
+}
+const mailText = (s, n) => String(s == null ? '' : s).replace(/\r\n?/g, '\n').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '').trim().slice(0, n);
+export const mailReady = () => !!(process.env.RESEND_API_KEY && process.env.MAIL_FROM && unsubSig('a@b.co'));
+async function blogMail(store, body) {
+  if (!mailReady()) return json(200, { ok: false, why: 'not-set-up' });
+  const subject = mailText(body.subject, 120).replace(/\n/g, ' '), text = mailText(body.text, 4000);
+  if (!subject || !text) return json(400, { error: 'empty' });
+  const n = await store.read('data/notify.json');
+  const groups = (Array.isArray(body.groups) ? body.groups : []).map(x => String(x).toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 24)).filter(x => x.length >= 2).slice(0, 20);
+  const want = new Set(['blog'].concat(groups.map(x => 'blog-' + x)));                // 'match': people who follow any of the post's groups, plus people who ticked every new post. 'all': everyone on the blog list.
+  const every = body.audience === 'all';
+  const to = Object.values(n.data && n.data.subs || {}).filter(x => x && typeof x.email === 'string' && x.topics && Object.keys(x.topics).some(k => every ? BLOG_RE.test(k) : want.has(k))).map(x => x.email).slice(0, 500);
+  if (!to.length) return json(200, { ok: true, sent: 0, failed: 0, total: 0 });
+  const f = globalThis.__applMailFetch || fetch;
+  let sent = 0, failed = 0;
+  for (let i = 0; i < to.length; i += 100) {
+    const chunk = to.slice(i, i + 100), msgs = chunk.map(e => {
+      const link = unsubLink(e);
+      return { from: process.env.MAIL_FROM, to: [e], subject, text: text + '\n\n--\nYou are getting this because you asked for an email about new blog posts on laurenappl.com.\nChange which posts you hear about, or stop these emails: ' + link + '\n', headers: { 'List-Unsubscribe': '<' + link + '>' } };
+    });
+    try {
+      const r = await f('https://api.resend.com/emails/batch', { method: 'POST', headers: { Authorization: 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify(msgs) });
+      if (r.ok) sent += chunk.length; else failed += chunk.length;
+    } catch (e) { failed += chunk.length; }
+  }
+  return json(200, { ok: true, sent, failed, total: to.length });
 }
 
 /* ---------- crash reports: a short, anonymous note a phone sends when the page died on it (or ran far too slowly) ---------- */
@@ -421,10 +510,21 @@ export async function adminPost(store, body) {
     const bb = blogData(bl.data), comments = [], stats = [];
     Object.keys(bb.posts).forEach(slug => { const r = bb.posts[slug] || {}; stats.push({ slug, v: r.v | 0, h: r.h | 0, t: r.t | 0 }); (Array.isArray(r.c) ? r.c : []).forEach(c => { if (c && typeof c.id === 'string') comments.push({ slug, id: c.id, n: String(c.n || ''), t: String(c.t || ''), at: c.at || 0, ok: !!c.ok }); }); });
     comments.sort((a, b) => (a.ok - b.ok) || b.at - a.at);
-    return json(200, { subs, scores, reports, comments, stats });
+    return json(200, { subs, scores, reports, comments, stats, mailReady: mailReady(), blogTopics: BLOG_TOPICS });
   }
+  if (act === 'blogMail') return blogMail(store, body);
   if (act === 'removeSub' && typeof body.email === 'string') {
     await update(store, 'data/notify.json', d => { const subs = d && d.subs || {}; const k = body.email.trim().toLowerCase(); if (!subs[k]) return null; delete subs[k]; return { next: { subs }, out: 1 }; });
+    return json(200, { ok: true });
+  }
+  if (act === 'removeBlog' && typeof body.email === 'string') {                              // off the blog list altogether (other lists stay)
+    await update(store, 'data/notify.json', d => {
+      const subs = d && d.subs || {}; const k = body.email.trim().toLowerCase(), cur = subs[k];
+      if (!cur || !cur.topics) return null;
+      const had = Object.keys(cur.topics).filter(t => BLOG_RE.test(t)); if (!had.length) return null;
+      had.forEach(t => { delete cur.topics[t]; }); if (!Object.keys(cur.topics).length) delete subs[k];
+      return { next: { subs }, out: 1 };
+    });
     return json(200, { ok: true });
   }
   if (act === 'removeTopic' && typeof body.email === 'string' && typeof body.topic === 'string') {
@@ -470,21 +570,104 @@ export async function adminPost(store, body) {
     await update(store, 'data/reports.json', d => (d && Array.isArray(d.list) && d.list.length) ? { next: { list: [] }, out: 1 } : null);
     return json(200, { ok: true });
   }
+  const w = await webAct(store, act, body);
+  if (w) return w;
   return json(400, { error: 'bad' });
 }
 
+
+/* ---------- writing from anywhere: posts made at laurenappl.com/write live in the private store and join the ones published from the Lab ---------- */
+const WP = 'data/webposts.json', WP_MAX = 300, WP_IMG_MAX = 900000;
+const wpId = v => /^[A-Za-z0-9_-]{4,40}$/.test(String(v)) ? String(v) : '';
+const wpSlug = v => String(v == null ? '' : v).toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'post';
+const wpTag = v => String(v == null ? '' : v).toLowerCase().replace(/^#+/, '').replace(/[^a-z0-9]+/g, '').slice(0, 24);
+const wpPic = v => /^media\/u-[a-z0-9]{8,16}$/.test(String(v || '').trim()) ? String(v).trim() : '';
+const wpData = d => ({ posts: d && d.posts && typeof d.posts === 'object' ? d.posts : {}, deleted: Array.isArray(d && d.deleted) ? d.deleted : [], groups: Array.isArray(d && d.groups) ? d.groups : null });
+function wpClean(p, now) {
+  if (!p || typeof p !== 'object') return null;
+  const id = wpId(p.id), title = oneLine(p.title, 200);
+  if (!id) return null;
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(String(p.date)) ? String(p.date) : new Date(now).toISOString().slice(0, 10);
+  const pa = p.publishAt ? new Date(p.publishAt) : null, tags = [];
+  (Array.isArray(p.tags) ? p.tags : []).forEach(t => { t = wpTag(t); if (t && !tags.includes(t) && tags.length < 15) tags.push(t); });
+  const groups = [...new Set((Array.isArray(p.groups) ? p.groups : []).map(x => String(x).toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 24)).filter(x => x.length >= 2))].slice(0, 10);
+  return { id, slug: wpSlug(p.slug || title), title: title || 'Untitled', date, excerpt: oneLine(p.excerpt, 300), tags, groups, cover: wpPic(p.cover), coverAlt: oneLine(p.coverAlt, 200), body: cleanBlock(p.body, 60000), draft: !!p.draft, pinned: !!p.pinned, publishAt: pa && !isNaN(pa) ? pa.toISOString() : '', upd: now };
+}
+const wpCache = { at: 0, data: null };
+export const forgetWeb = () => { wpCache.data = null; wpCache.at = 0; };
+export async function webFeed(store, now = Date.now()) {              // what visitors get: only published posts that are due, never drafts
+  if (!wpCache.data || now - wpCache.at > 20000) { wpCache.data = wpData((await store.read(WP)).data); wpCache.at = now; }
+  const d = wpCache.data, all = Object.values(d.posts).filter(Boolean), due = p => !p.draft && !(p.publishAt && Date.parse(p.publishAt) > now), posts = all.filter(due), hidden = d.deleted.concat(all.filter(p => !due(p)).map(p => p.id));
+  return { status: 200, type: 'application/json; charset=utf-8', body: JSON.stringify({ posts, deleted: hidden, groups: d.groups ? d.groups.map(g => ({ id: g.id, label: g.label })) : null }), headers: { 'Cache-Control': 'public, max-age=0, s-maxage=20, stale-while-revalidate=120' } };
+}
+export async function webImg(store, id) {
+  if (!/^[a-z0-9]{8,16}$/.test(String(id || ''))) return json(404, { error: 'none' });
+  const r = await store.read('media/u-' + id + '.json');
+  if (!r.data || typeof r.data.b !== 'string') return json(404, { error: 'none' });
+  return { status: 200, type: /^image\/(jpeg|png|webp)$/.test(r.data.t) ? r.data.t : 'image/jpeg', body: Buffer.from(r.data.b, 'base64'), headers: { 'Cache-Control': 'public, max-age=31536000, s-maxage=31536000, immutable' } };
+}
+async function webAct(store, act, body) {
+  if (typeof act !== 'string' || act.slice(0, 2) !== 'wp') return null;
+  const now = Date.now();
+  if (act === 'wpList') {
+    const d = wpData((await store.read(WP)).data);
+    return json(200, { ok: true, posts: Object.values(d.posts), deleted: d.deleted, groups: d.groups, mailReady: mailReady() });
+  }
+  if (act === 'wpSave') {
+    const p = wpClean(body.post, now); if (!p) return json(400, { error: 'post' });
+    p.draft = !body.publish;
+    const out = await update(store, WP, d0 => {
+      const d = wpData(d0);
+      if (!d.posts[p.id] && Object.keys(d.posts).length >= WP_MAX) return { out: { full: true } };
+      let slug = p.slug, k = 2; const taken = s => Object.values(d.posts).some(x => x && x.id !== p.id && x.slug === s);
+      while (taken(slug)) slug = p.slug + '-' + k++;
+      p.slug = slug;
+      if (p.pinned && !p.draft) Object.values(d.posts).forEach(x => { if (x && x.id !== p.id) x.pinned = false; });
+      d.posts[p.id] = p; d.deleted = d.deleted.filter(x => x !== p.id);
+      return { next: d, out: { post: p } };
+    });
+    forgetWeb();
+    if (out && out.full) return json(409, { error: 'full' });
+    return json(200, { ok: true, post: out.post });
+  }
+  if (act === 'wpDelete') {
+    const id = wpId(body.id); if (!id) return json(400, { error: 'id' });
+    await update(store, WP, d0 => { const d = wpData(d0); delete d.posts[id]; if (!d.deleted.includes(id)) d.deleted.push(id); d.deleted = d.deleted.slice(-200); return { next: d, out: 1 }; });
+    forgetWeb();
+    return json(200, { ok: true });
+  }
+  if (act === 'wpGroups') {
+    const gs = (Array.isArray(body.groups) ? body.groups : []).map(g => g && typeof g === 'object' ? { id: String(g.id || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 24), label: oneLine(g.label, 24), words: (Array.isArray(g.words) ? g.words : []).map(w => String(w).toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 24)).filter(Boolean).slice(0, 80) } : null).filter(g => g && g.id.length >= 2 && g.label).slice(0, 10);
+    if (!gs.length) return json(400, { error: 'groups' });
+    await update(store, WP, d0 => { const d = wpData(d0); d.groups = gs; return { next: d, out: 1 }; });
+    forgetWeb();
+    return json(200, { ok: true });
+  }
+  if (act === 'wpImg') {
+    const b = String(body.b64 || '').replace(/^data:[^,]*,/, '');
+    if (!b || b.length > Math.ceil(WP_IMG_MAX * 4 / 3) + 8 || /[^A-Za-z0-9+/=]/.test(b)) return json(400, { error: 'image' });
+    const buf = Buffer.from(b, 'base64');
+    const t = buf.length > 12 && buf[0] === 0xff && buf[1] === 0xd8 ? 'image/jpeg' : buf.length > 12 && buf[0] === 0x89 && buf[1] === 0x50 ? 'image/png' : buf.length > 12 && buf.slice(0, 4).toString() === 'RIFF' && buf.slice(8, 12).toString() === 'WEBP' ? 'image/webp' : '';
+    if (!t || buf.length > WP_IMG_MAX) return json(400, { error: 'image' });
+    const id = crypto.randomBytes(8).toString('hex');
+    await store.write('media/u-' + id + '.json', { t, b: buf.toString('base64'), at: now }, null);
+    return json(200, { ok: true, url: 'media/u-' + id });
+  }
+  return null;
+}
+
 /* ---------- plumbing between Vercel's request/response and the functions above ---------- */
-export async function readBody(req) {
+export async function readBody(req, max = 8192) {
   if (req.body && typeof req.body === 'object' && !Buffer.isBuffer(req.body)) return req.body;
   let text = '';
   if (typeof req.body === 'string') text = req.body;
   else if (Buffer.isBuffer(req.body)) text = req.body.toString('utf8');
   else {
     const chunks = []; let n = 0;
-    for await (const c of req) { n += c.length; if (n > 8192) throw Object.assign(new Error('too big'), { status: 413 }); chunks.push(c); }
+    for await (const c of req) { n += c.length; if (n > max) throw Object.assign(new Error('too big'), { status: 413 }); chunks.push(c); }
     text = Buffer.concat(chunks).toString('utf8');
   }
-  if (text.length > 8192) throw Object.assign(new Error('too big'), { status: 413 });
+  if (text.length > max) throw Object.assign(new Error('too big'), { status: 413 });
   try { return JSON.parse(text || '{}'); } catch (e) { throw Object.assign(new Error('bad json'), { status: 400 }); }
 }
 export const clientIp = req => String(req.headers['x-real-ip'] || req.headers['x-forwarded-for'] || '').split(',')[0].trim();

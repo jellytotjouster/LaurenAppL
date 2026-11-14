@@ -3,6 +3,18 @@
   {
    "source": "/admin",
    "destination": "/api/admin"
+  },
+  {
+   "source": "/write",
+   "destination": "/api/write"
+  },
+  {
+   "source": "/blog/feed.json",
+   "destination": "/api/posts"
+  },
+  {
+   "source": "/media/u-:id",
+   "destination": "/api/posts?img=:id"
   }
  ],
  "headers": [
