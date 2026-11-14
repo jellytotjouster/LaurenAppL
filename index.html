@@ -495,6 +495,17 @@ button.tag { font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; 
 .cal-n { margin: 8px 0 0; font-size: 12.5px; color: var(--muted); }
 .bl-count { margin: 0 0 12px; } .bl-count a { color: inherit; }
 
+/* blog landing page: keep the search, subscribe box and the first post close together so a real post shows without scrolling */
+.pg.bl-pg { gap: 14px; }
+.bl-pg .bl-tools { margin: 0; gap: 10px; }
+.bl-pg .bl-filter { margin: 0; }
+.bl-pg .bl-count { margin: 0 0 -2px; }
+.bl-pg .bl-ht summary { padding-bottom: 2px; }
+.bl-pg .sub { margin: 0; padding: 10px 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.bl-pg .sub .sub-f { flex: 1 1 100%; }
+.bl-pg .sub .sub-b { padding-block: 8px; }
+.bl-pg .head { margin-bottom: 0; }
+
 </style>
 </head>
 <body>
@@ -2277,7 +2288,7 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
       var chips = order.length ? '<details class="bl-ht"' + (tag ? ' open' : '') + '><summary>Hashtags</summary><nav class="tagbar" aria-label="Filter by hashtag"><a class="tag' + (tag ? '' : ' on') + '" href="#blog"' + (tag ? '' : ' aria-current="true"') + '>All <small>' + all.length + '</small></a>' +
         order.map(function (t) { return '<a class="tag' + (t === tag ? ' on' : '') + '" href="#blog/tag/' + t + '"' + (t === tag ? ' aria-current="true"' : '') + '>#' + t + ' <small>' + counts[t] + '</small></a>'; }).join('') + '</nav></details>' : '';
       var topics = gl.length ? '<div class="bl-topics" role="group" aria-label="Filter by topic"><button type="button" class="tag' + (v.g ? '' : ' on') + '" data-g="">All topics</button>' + gl.map(function (g) { return '<button type="button" class="tag' + (v.g === g.id ? ' on' : '') + '" data-g="' + g.id + '" aria-pressed="' + (v.g === g.id) + '">' + esc(g.label) + ' <small>' + gcount[g.id] + '</small></button>'; }).join('') + '</div>' : '';
-      box.innerHTML = '<div class="pg">' + head() +
+      box.innerHTML = '<div class="pg bl-pg">' + head() +
         '<div class="bl-tools"><div class="bl-row"><div class="bl-find"><label class="sr" for="bl-q">Search all posts</label><input id="bl-q" type="search" placeholder="Search every post for a word…" autocomplete="off" enterkeyhint="search"></div>' +
         '<label class="sr" for="bl-sort">Sort posts</label><select id="bl-sort"><option value="new">Newest first</option><option value="old">Oldest first</option></select>' +
         '<button type="button" class="bl-calb" id="bl-calb" aria-expanded="' + (v.day ? 'true' : 'false') + '" aria-controls="bl-cal">Calendar</button></div>' +
