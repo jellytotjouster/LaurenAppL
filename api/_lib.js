@@ -305,6 +305,8 @@ if($('save')){$('save').onclick=function(){var t2=all.checked?['blog']:boxes.fil
   return { status: 200, type: 'text/html; charset=utf-8', body: page, headers: { 'X-Robots-Tag': 'noindex, nofollow', 'Referrer-Policy': 'no-referrer', 'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'" } };
 }
 const mailText = (s, n) => String(s == null ? '' : s).replace(/\r\n?/g, '\n').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '').trim().slice(0, n);
+// The sender always shows as "LaurenAppL": only the address is taken from MAIL_FROM (which may say "Lauren <blog@laurenappl.com>").
+export const mailFrom = () => { const m = String(process.env.MAIL_FROM || '').match(/<([^<>\s]+@[^<>\s]+)>/) || String(process.env.MAIL_FROM || '').match(/([^<>\s"]+@[^<>\s"]+)/); return m ? 'LaurenAppL <' + m[1] + '>' : process.env.MAIL_FROM; };
 export const mailReady = () => !!(process.env.RESEND_API_KEY && process.env.MAIL_FROM && unsubSig('a@b.co'));
 async function blogMail(store, body) {
   if (!mailReady()) return json(200, { ok: false, why: 'not-set-up' });
@@ -321,7 +323,7 @@ async function blogMail(store, body) {
   for (let i = 0; i < to.length; i += 100) {
     const chunk = to.slice(i, i + 100), msgs = chunk.map(e => {
       const link = unsubLink(e);
-      return { from: process.env.MAIL_FROM, to: [e], subject, text: text + '\n\n--\nYou are getting this because you asked for an email about new blog posts on laurenappl.com.\nChange which posts you hear about, or stop these emails: ' + link + '\n', headers: { 'List-Unsubscribe': '<' + link + '>' } };
+      return { from: mailFrom(), to: [e], subject, text: text + '\n\n--\nYou are getting this because you asked for an email about new blog posts on laurenappl.com.\nChange which posts you hear about, or stop these emails: ' + link + '\n', headers: { 'List-Unsubscribe': '<' + link + '>' } };
     });
     try {
       const r = await f('https://api.resend.com/emails/batch', { method: 'POST', headers: { Authorization: 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify(msgs) });
