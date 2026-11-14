@@ -3,6 +3,10 @@
    Files start with an underscore so Vercel does not publish this one as an address of its own. */
 import crypto from 'node:crypto';
 
+/* The storage library, left alone, answers a stumble by trying again up to 10 times with longer and longer waits; that can outlast the 10 seconds a function is allowed and leave a player staring at "Saving…".
+   Two tries is plenty: a failure then comes back quickly and the page offers Save again. */
+if (!process.env.VERCEL_BLOB_RETRIES) process.env.VERCEL_BLOB_RETRIES = '2';
+
 /* ---------- storage ---------- */
 let realStore = null;
 const tagOf = s => String(s || '').replace(/^W\//i, '').replace(/^"|"$/g, '');          // "abc", W/"abc" and abc are the same version tag written three ways
@@ -55,14 +59,15 @@ export function blobStore() {
 }
 
 /* read, change, write back; if somebody else wrote in between, read again and retry (so two people saving at once never lose each other's entry) */
-export async function update(store, path, fn, tries = 8) {
+export async function update(store, path, fn, tries = 6, budgetMs = 7000) {
+  const t0 = Date.now();
   for (let i = 0; ; i++) {
     const { data, etag } = await store.read(path);
     const r = fn(data);
     if (!r || r.next === undefined) return r ? r.out : undefined;
     try { await store.write(path, r.next, etag); return r.out; }
     catch (e) {
-      if (!store.isConflict(e) || i >= tries - 1) throw e;
+      if (!store.isConflict(e) || i >= tries - 1 || Date.now() - t0 > budgetMs) throw e;      // out of tries or out of time: say so, rather than run into the 10 second limit
       await new Promise(ok => setTimeout(ok, 30 + Math.random() * 120));
     }
   }
@@ -135,7 +140,7 @@ function startsTooMany(ip, now) {
 /* ---------- high scores ---------- */
 /* The free storage plan allows 10,000 reads a month, so the board is remembered for a few seconds on each warm server: any number of people watching it (each open board asks every 20 seconds)
    costs at most one read every few seconds. A player's own save asks for a fresh read, and every save or removal makes the server forget what it remembered. */
-const BOARD_TTL = 8000;
+const BOARD_TTL = 15000;
 const board = { store: null, at: 0, rows: null, pending: null };
 const forgetBoard = () => { board.rows = null; board.at = 0; board.pending = null; };
 async function readBoard(store, fresh, now) {
@@ -275,6 +280,132 @@ export async function reportPost(store, body, ip, now = Date.now()) {
   return json(200, { ok: true });
 }
 
+/* ---------- the blog (Lozza's Logic): views, hearts, thumbs up and comments ----------
+   Everything is kept in one small file inside the same private store: data/blog.json
+     { posts: { "<slug>": { v: views, h: hearts, t: thumbs up, c: [ { id, n: name, t: text, at, ok: approved? } ] } }, w: { m: "2026-11", n: saves this month } }
+   The free plan allows 2,000 saves a month for the WHOLE store (scores and sign-ups too), and if that runs out the store is switched off for 30 days.
+   So the blog is held to a small share of it, and it can never use more than that:
+   - a hearts / thumbs up / comment save counts against a ceiling of 400 a month; past it the buttons say "resting" and nothing else on the site is affected;
+   - a view is only counted in memory, and written together with the next change or, at most, once every 3 hours, and never once 300 saves have been used;
+     (a few views can be lost if a server is switched off in between, which does not matter for a counter);
+   - a read is remembered for a minute on a warm server, and one read serves a whole list of posts;
+   - a comment is held until the owner approves it on the owner page, and the owner page is the only place that can approve or remove one. */
+const SLUG_RE = /^[a-z0-9][a-z0-9-]{0,59}$/;
+const BLOG_TTL = 60000, VIEW_FLUSH = 3 * 3600e3, BLOG_SAVES = 400, BLOG_VIEW_SAVES = 300;
+const BLOG_MAX_POSTS = 500, BLOG_MAX_COMMENTS = 150, BLOG_MAX_PENDING_POST = 25, BLOG_MAX_PENDING = 100;
+const blog = { store: null, at: 0, data: null, pend: new Map(), lastFlush: 0 };
+const forgetBlog = () => { blog.data = null; blog.at = 0; };
+const monthOf = now => new Date(now).toISOString().slice(0, 7);
+const blogData = d => ({
+  posts: d && d.posts && typeof d.posts === 'object' && !Array.isArray(d.posts) ? d.posts : {},
+  w: d && d.w && typeof d.w === 'object' ? { m: String(d.w.m || ''), n: d.w.n | 0 } : { m: '', n: 0 }
+});
+const savesUsed = (b, now) => (b.w.m === monthOf(now) ? b.w.n : 0);
+const countSave = (b, now) => { const m = monthOf(now); if (b.w.m !== m) b.w = { m, n: 0 }; b.w.n++; };
+const blogRec = (b, slug) => { const r = b.posts[slug] || (b.posts[slug] = { v: 0, h: 0, t: 0, c: [] }); if (!Array.isArray(r.c)) r.c = []; return r; };
+const blogFull = (b, slug) => !b.posts[slug] && Object.keys(b.posts).length >= BLOG_MAX_POSTS;
+const blogPub = (r, withComments, extraViews = 0) => {
+  const o = { v: (r ? r.v | 0 : 0) + extraViews, h: r ? r.h | 0 : 0, t: r ? r.t | 0 : 0 };
+  if (withComments) o.c = (r && Array.isArray(r.c) ? r.c : []).filter(c => c && c.ok).map(c => ({ id: c.id, n: c.n, t: c.t, at: c.at }));
+  return o;
+};
+const applyViews = (b, take) => take.forEach((n, slug) => { if (!blogFull(b, slug)) blogRec(b, slug).v += n; });
+async function readBlog(store, now, fresh = false) {
+  if (blog.store !== store) { blog.store = store; forgetBlog(); }
+  if (!fresh && blog.data && now - blog.at < BLOG_TTL) return blog.data;
+  const { data } = await store.read('data/blog.json');
+  blog.data = blogData(data); blog.at = now;
+  return blog.data;
+}
+async function flushViews(store, now) {                                // write the views counted in memory, but at most every 3 hours, and only while the blog is well inside its share
+  if (!blog.pend.size || now - blog.lastFlush < VIEW_FLUSH) return;
+  const take = blog.pend; blog.pend = new Map(); blog.lastFlush = now;
+  try {
+    await update(store, 'data/blog.json', d => {
+      const b = blogData(d);
+      if (savesUsed(b, now) >= BLOG_VIEW_SAVES) return { out: 'cap' };           // out of the views' share for this month: they are simply not saved
+      applyViews(b, take); countSave(b, now);
+      return { next: b, out: 1 };
+    });
+    forgetBlog();
+  } catch (e) { take.forEach((n, s) => blog.pend.set(s, (blog.pend.get(s) || 0) + n)); throw e; }
+}
+const bseen = new Map();                                               // best-effort brake per visitor address (it resets when the server restarts; the real limits are the caps above)
+function blogLimited(ip, kind, max, now) {
+  if (!ip) return false;
+  const key = kind + ':' + ip, a = (bseen.get(key) || []).filter(t => now - t < 3600e3);
+  if (a.length >= max) { bseen.set(key, a); return true; }
+  a.push(now); bseen.set(key, a);
+  if (bseen.size > 4000) bseen.clear();
+  return false;
+}
+const LS = String.fromCharCode(8232, 8233);
+const cleanBlock = (s, n) => String(s == null ? '' : s).replace(/\r\n?/g, '\n').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '').split(LS[0]).join(' ').split(LS[1]).join(' ').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim().slice(0, n);
+const cleanWho = s => String(s == null ? '' : s).replace(/[^\p{L}\p{M}\p{N} _.\-'’]/gu, '').replace(/\s+/g, ' ').trim().slice(0, 40);
+const LINKY = /(https?:|www\.|\b[a-z0-9-]+\.(com|net|org|co|uk|io|ru|xyz|top|info|biz|link|shop|site|online|club|click)\b)/i;   // no links in comments: it keeps spam out of the owner's queue
+
+export async function blogGet(store, slug, slugs, now = Date.now()) {
+  try { await flushViews(store, now); } catch (e) { /* a view counter must never break a read */ }
+  const d = await readBlog(store, now);
+  if (typeof slug === 'string' && SLUG_RE.test(slug)) return json(200, blogPub(d.posts[slug], true, blog.pend.get(slug) || 0));
+  const out = {};
+  String(slugs || '').split(',').filter(s => SLUG_RE.test(s)).slice(0, 60).forEach(s => { out[s] = blogPub(d.posts[s], false, blog.pend.get(s) || 0); });
+  return json(200, { posts: out });
+}
+
+export async function blogPost(store, body, now = Date.now(), ip = '') {
+  if (!body || typeof body !== 'object') return json(400, { error: 'bad' });
+  const slug = String(body.slug == null ? '' : body.slug), act = body.action;
+  if (!SLUG_RE.test(slug)) return json(400, { error: 'slug' });
+  if (act === 'view') {
+    if (!blogLimited(ip, 'view', 120, now)) blog.pend.set(slug, (blog.pend.get(slug) || 0) + 1);
+    try { await flushViews(store, now); } catch (e) { /* kept in memory, tried again later */ }
+    const d = await readBlog(store, now);
+    return json(200, blogPub(d.posts[slug], true, blog.pend.get(slug) || 0));
+  }
+  if (act === 'react') {
+    const kind = body.kind === 'heart' ? 'h' : body.kind === 'thumb' ? 't' : null;
+    if (!kind) return json(400, { error: 'bad' });
+    if (blogLimited(ip, 'act', 60, now)) return json(429, { error: 'slow' });
+    const on = body.on !== false, take = blog.pend; blog.pend = new Map();      // the views counted so far ride along with this save
+    let out;
+    try {
+      out = await update(store, 'data/blog.json', d => {
+        const b = blogData(d);
+        if (savesUsed(b, now) >= BLOG_SAVES) return { out: 'cap' };
+        applyViews(b, take);
+        if (blogFull(b, slug)) { countSave(b, now); return { next: b, out: 'full' }; }
+        const r = blogRec(b, slug); r[kind] = Math.max(0, (r[kind] | 0) + (on ? 1 : -1)); countSave(b, now);
+        return { next: b, out: blogPub(r, true) };
+      });
+    } catch (e) { take.forEach((n, s) => blog.pend.set(s, (blog.pend.get(s) || 0) + n)); throw e; }
+    if (out === 'cap') { take.forEach((n, s) => blog.pend.set(s, (blog.pend.get(s) || 0) + n)); return json(503, { error: 'busy' }); }
+    blog.lastFlush = now; forgetBlog();
+    return out === 'full' ? json(503, { error: 'full' }) : json(200, out);
+  }
+  if (act === 'comment') {
+    if (body.website) return json(200, { ok: true, pending: true });             // the hidden field only a bot fills in: look as if it worked
+    const text = cleanBlock(body.text, 1000);
+    if (!text) return json(400, { error: 'empty' });
+    if (LINKY.test(text)) return json(400, { error: 'links' });
+    if (blogLimited(ip, 'com', 5, now)) return json(429, { error: 'slow' });
+    const name = cleanWho(body.name) || 'Anonymous', id = crypto.randomBytes(6).toString('hex');
+    const res = await update(store, 'data/blog.json', d => {
+      const b = blogData(d);
+      if (savesUsed(b, now) >= BLOG_SAVES) return { out: 'busy' };
+      if (blogFull(b, slug)) return { out: 'full' };
+      const r = blogRec(b, slug); let waiting = 0;
+      Object.keys(b.posts).forEach(k => { (b.posts[k].c || []).forEach(c => { if (c && !c.ok) waiting++; }); });
+      if (r.c.length >= BLOG_MAX_COMMENTS || r.c.filter(c => c && !c.ok).length >= BLOG_MAX_PENDING_POST || waiting >= BLOG_MAX_PENDING) return { out: 'full' };
+      r.c.push({ id, n: name, t: text, at: now, ok: false }); countSave(b, now);
+      return { next: b, out: 'ok' };
+    });
+    forgetBlog();
+    return res === 'ok' ? json(200, { ok: true, pending: true }) : json(503, { error: res });
+  }
+  return json(400, { error: 'bad' });
+}
+
 /* ---------- the owner page ---------- */
 const same = (a, b) => crypto.timingSafeEqual(crypto.createHash('sha256').update(String(a)).digest(), crypto.createHash('sha256').update(String(b)).digest());
 export const adminOk = (given, expected) => typeof expected === 'string' && expected.length >= 16 && typeof given === 'string' && given.length > 0 && same(given, expected);
@@ -283,11 +414,14 @@ export async function adminPost(store, body) {
   const act = body && body.action;
   if (act === 'ping') return json(200, { ok: true });
   if (act === 'list') {
-    const [s, n, rp] = await Promise.all([store.read('data/scores.json'), store.read('data/notify.json'), store.read('data/reports.json')]);
+    const [s, n, rp, bl] = await Promise.all([store.read('data/scores.json'), store.read('data/notify.json'), store.read('data/reports.json'), store.read('data/blog.json')]);
     const subs = Object.values(n.data && n.data.subs || {}).filter(x => x && typeof x.email === 'string').map(x => ({ email: x.email, topics: x.topics || {}, at: x.at || 0 }));
     const scores = (s.data && Array.isArray(s.data.rows) ? s.data.rows : []).filter(validRow).sort(byRank).map(r => { const secs = Number.isFinite(r.secs) ? r.secs : 0; return { ...pub(r), secs, by: r.by === 'owner' ? 'owner' : '', flawless: secs ? flawless(secs) : 0, look: !!(secs || r.score >= 150) && looksOff(r.score, secs) }; });
     const reports = (rp.data && Array.isArray(rp.data.list) ? rp.data.list : []).filter(r => r && Number.isFinite(r.at) && Array.isArray(r.ev));
-    return json(200, { subs, scores, reports });
+    const bb = blogData(bl.data), comments = [], stats = [];
+    Object.keys(bb.posts).forEach(slug => { const r = bb.posts[slug] || {}; stats.push({ slug, v: r.v | 0, h: r.h | 0, t: r.t | 0 }); (Array.isArray(r.c) ? r.c : []).forEach(c => { if (c && typeof c.id === 'string') comments.push({ slug, id: c.id, n: String(c.n || ''), t: String(c.t || ''), at: c.at || 0, ok: !!c.ok }); }); });
+    comments.sort((a, b) => (a.ok - b.ok) || b.at - a.at);
+    return json(200, { subs, scores, reports, comments, stats });
   }
   if (act === 'removeSub' && typeof body.email === 'string') {
     await update(store, 'data/notify.json', d => { const subs = d && d.subs || {}; const k = body.email.trim().toLowerCase(); if (!subs[k]) return null; delete subs[k]; return { next: { subs }, out: 1 }; });
@@ -320,6 +454,16 @@ export async function adminPost(store, body) {
       return n.length === rows.length ? null : { next: { rows: n }, out: 1 };
     });
     forgetBoard();
+    return json(200, { ok: true });
+  }
+  if ((act === 'blogApprove' || act === 'blogRemove') && typeof body.slug === 'string' && typeof body.id === 'string') {   // the owner approves or removes a blog comment
+    await update(store, 'data/blog.json', d => {
+      const b = blogData(d), r = b.posts[body.slug]; if (!r || !Array.isArray(r.c)) return null;
+      const i = r.c.findIndex(c => c && c.id === body.id); if (i < 0) return null;
+      if (act === 'blogApprove') r.c[i].ok = true; else r.c.splice(i, 1);
+      return { next: b, out: 1 };
+    });
+    forgetBlog();
     return json(200, { ok: true });
   }
   if (act === 'clearReports') {
