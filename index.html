@@ -5397,7 +5397,7 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
     about: 'An A5 original in fineliner and felt tip.',
     img: 'media/unknown/listing-thumb.webp', full: 'media/unknown/listing.webp',
     alt: 'A pink sphere scribbled over with fine black loops, with a large eye resting on top of it. A blue patterned shape curls behind, an orange grinning mask with big white teeth sits at the left, and a chain of teal beads trails off to the top right. Purple raindrops and purple and yellow clouds fall across a densely hatched grey background.' });
-  Object.assign(WORKS[4], { name: 'Why am I doomscrolling?', price: 95, sold: false,
+  Object.assign(WORKS[4], { name: 'Why am I doomscrolling?', price: 95, sold: true,
     prints: [['A6', '105 \u00d7 148 mm', 15], ['A5', '148 \u00d7 210 mm', 18], ['A4', '210 \u00d7 297 mm', 28]],
     w: 1100, h: 1829, ar: 1100 / 1829, meta: 'Fineliner & felt tip \u00b7 A5',
     medium: 'Fineliner and felt tip', size: 'A5 (148 \u00d7 210 mm)',
@@ -5675,19 +5675,19 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
   const SHAPES = [[1, 100, 'c'], [3 / 4, 100, 'c'], [3 / 2, 100, 'c'], [1, 64, 'l'], [2 / 3, 74, 'r'], [5 / 4, 94, 'c'], [4 / 5, 100, 'c'], [16 / 9, 100, 'c'], [1, 82, 'r'], [4 / 3, 86, 'c'], [3 / 5, 70, 'c']];
   const FRAMES = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18], CW = ['n', 'g', 'r', 'n', 'p', 'y', 'k', 'n', 'g', 'p', 'r', 'n', 'y', 'k', 'g', 'n', 'p', 'r', 'k'], THICK = [2, 1, 3, 2, 1, 2, 3, 1, 2, 3, 1, 2, 1, 3, 2, 1, 3, 2, 1];
   function shopTile(it, i) {
-    const [cat, label] = it.kept ? KIND.print : KIND[it.kind], pic = it.full || it.img;
+    const po = it.kept || it.sold, [cat, label] = po ? KIND.print : KIND[it.kind], pic = it.full || it.img;
     const art = pic ? `<img loading="lazy" class="art" src="${pic}" alt="${esc(it.alt || it.name)}" width="${it.w || 1400}" height="${it.h || 982}" decoding="async">`
       : '';
-    const status = it.kind === 'work' && !it.kept ? '<span class="chip">Available</span>' : '';
+    const status = it.kind === 'work' && !po ? '<span class="chip">Available</span>' : '';
     const sh = SHAPES[(i * 4 + 3) % SHAPES.length], ar = pic ? (it.ar || 1400 / 982) : sh[0], w = pic ? 100 : sh[1], al = pic ? 'c' : sh[2];
     const mat = `aspect-ratio:${ar.toFixed(4)};width:${w}%;margin:0 ${al === 'r' ? '0' : 'auto'} 0 ${al === 'l' ? '0' : 'auto'}`;
-    const kp = !!(it.kept && it.prints), dual = !!it.prints && !it.kept, from = it.prints ? Math.min(...it.prints.map(q => q[2])) : 0;
+    const kp = !!(po && it.prints), dual = !!it.prints && !po, from = it.prints ? Math.min(...it.prints.map(q => q[2])) : 0;
     return `<li data-cat="${dual ? 'originals prints' : cat}" data-status="available"${dual ? ` data-dual="1" data-orig="${it.price ? '\u00a3' + it.price : 'Price'}" data-from="From \u00a3${from}" data-m1="${esc(it.meta)}" data-m2="Print \u00b7 ${it.prints.map(q => q[0]).join(', ')}"` : ''}><a class="tile gtile" data-fr="${FRAMES[i % FRAMES.length]}" data-cw="${CW[i % CW.length]}" data-th="${THICK[i % THICK.length]}" href="#${it.kind === 'work' ? 'buy-' + it.n : it.id}"><span class="mat" style="${mat}"><span class="mat-in">${art}</span></span>` +
       `<span class="cap"><span class="kick"><span class="sr">${label}</span><i class="g gi-s-${cat}" aria-hidden="true"></i></span>` +
       `<span class="t">${esc(it.name)}</span><span class="m">${esc(kp ? 'Print \u00b7 ' + it.prints.map(q => q[0]).join(', ') + (it.edition ? ' \u00b7 limited edition' : '') : it.meta)}</span><span class="s">${status}<span class="price">${kp ? 'From \u00a3' + from : it.price ? '\u00a3' + it.price : 'Price'}</span>${dual ? `<span class="alt muted">Prints from \u00a3${from}</span>` : ''}</span></span>` +
       `<span class="hm" aria-hidden="true">${SITE.markSVG(LOGO_KEY)}</span></a></li>`;
   }
-  const mixed = WORKS.filter(w => !w.sold && (w.img || w.full));      // only works with a photo are shown: no empty frames
+  const mixed = WORKS.filter(w => (!w.sold || w.prints) && (w.img || w.full));      // only works with a photo are shown: no empty frames
   $('#shop-gallery').innerHTML = mixed.map(shopTile).join('');
   /* the gallery packs like a wall: each card reports its own height and the grid (rows of 2px) tucks the next one into the gap */
   (function () {
