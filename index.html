@@ -4,7 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>LaurenAppL | Art, prints and originals</title>
-<meta name="description" content="Art by Lauren Apple: drawings, paintings and photography. Limited edition prints and one-off originals, shipped from the UK.">
+<meta name="description" content="Art by Lauren AppL: drawings, paintings and photography. Limited edition prints and one-off originals, shipped from the UK.">
+<meta name="keywords" content="Lauren AppL, LaurenAppL, Lauren Apple, LaurenApple, Lauren Apple art, art prints, original artwork, felt tip, watercolour, UK artist">
 <meta name="theme-color" content="#FBFAF6">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
@@ -13,10 +14,11 @@
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="LaurenAppL">
 <meta property="og:title" content="LaurenAppL | Art, prints and originals">
-<meta property="og:description" content="Drawings, paintings and photography by Lauren Apple. Limited edition prints and one-off originals.">
+<meta property="og:description" content="Drawings, paintings and photography by Lauren AppL. Limited edition prints and one-off originals.">
 <meta property="og:url" content="https://laurenappl.com/">
 <meta property="og:image" content="https://laurenappl.com/media/site/og.jpg">
 <meta name="twitter:card" content="summary_large_image">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":"LaurenAppL","alternateName":["Lauren AppL","Lauren Apple","LaurenApple","Lauren Apple art","Lauren AppL art"],"url":"https://laurenappl.com/","description":"Art by Lauren AppL: drawings, paintings and photography. Limited edition prints and one-off originals, shipped from the UK."}</script>
 <style>:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style>
 <style id="lab-private">html:not(.lab-on) #tri-lab { display: none !important; } html:not(.lab-on) .hs-vchip small { display: none; }</style>
 <script id="giveaway-end">(function () { try { if (Date.now() >= Date.UTC(2026, 10, 20, 19, 0, 0)) document.documentElement.classList.add("giveaway-over"); } catch (e) {} })();</script>
@@ -5366,7 +5368,7 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
 
   /* ---------- sample stock ---------- */
   const SOLD = [9];
-  const WORKS = Array.from({ length: 13 }, (_, i) => ({ id: 'work-' + (i + 1), kind: 'work', n: i + 1, name: 'Artwork ' + pad(i + 1), sold: SOLD.includes(i + 1), mark: (i * 3 + 1) % NMARK, meta: 'Year · Medium · Size' }));
+  const WORKS = Array.from({ length: 14 }, (_, i) => ({ id: 'work-' + (i + 1), kind: 'work', n: i + 1, name: 'Artwork ' + pad(i + 1), sold: SOLD.includes(i + 1), mark: (i * 3 + 1) % NMARK, meta: 'Year · Medium · Size' }));
   /* the first work is real; the others are placeholders until their photos and titles arrive */
   Object.assign(WORKS[0], { name: 'Smooth seas don\u2019t make good sailors', img: 'media/seas/listing-thumb.webp', full: 'media/seas/listing.webp', alt: 'Smooth seas don\u2019t make good sailors, a marker-ink drawing: checkerboard clouds in black, white, orange and pink, a long chain of purple beads curling down into layered blue and teal waves, a long green creature, and a dark green fish with three round red eyes.' });
   /* the first work's listing: an A4 original (price in pounds, a first guess: set it with price:), prints A5 to A3; year still to add */
@@ -5436,7 +5438,7 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
     { t: 'media/tall/flat.webp', cap: "Close up: the eye", a: [0.42, 0.36, 1.75], b: [0.82, 0.5, 1.5] },
     { t: 'media/tall/flat.webp', cap: "Close up: the shading", a: [0.1, 0.92, 1.4], b: [0.92, 0.72, 1.3] }
   ];
-  Object.assign(WORKS[8], { name: 'I am tall and unremarkable', year: 'October 2026', price: 125, sold: false,
+  Object.assign(WORKS[8], { name: 'I am tall and unremarkable', year: 'October 2026', price: 95, sold: false,
     prints: [['A6', '105 × 148 mm', 15], ['A5', '148 × 210 mm', 18], ['A4', '210 × 297 mm', 28]],
     w: 1100, h: 1467, ar: 1100 / 1467, meta: 'Watercolour on textured paper · A5',
     medium: 'Watercolour on Faber-Castell textured paper', size: 'A5 (148 × 210 mm)',
@@ -5518,6 +5520,24 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
     alt: 'Do you have a key?, a Sharpie fineliner drawing. A pink face with wide, bloodshot eyes and a clenched, grinning mouth sits under three tongues of orange flame, against a green shape, hatched blue sky and a black night sky of white stars, with purple bubbles and small mushrooms at the top. A black-and-white checkerboard ribbon curls across the bottom, below a small white figure at the left, over a yellow ground with dark cone-shaped spikes.',
     media: [{ cap: 'The original, flat.', zoom: 'media/key/flat.webp' }],
     wall: WALL_KEY });
+  /* the fourteenth real work: Speak, an A5 (just under) watercolour on sketch paper, November 2026. The original is for sale at 95 pounds, the same as I am tall and unremarkable; prints are the same three sizes and prices as the other watercolours (A6 15, A5 18, A4 28).
+     One photo, so its screen wall moves the camera over it (media/speak/flat.webp): the whole painting, then four close-ups. */
+  const WALL_SPEAK = [
+    { t: 'media/speak/flat.webp', cap: "The whole painting, top to bottom", a: [0.5, 0.0, 1.0], b: [0.5, 1.0, 1.0] },
+    { t: 'media/speak/flat.webp', cap: "Close up: the yellow cross", a: [0.35, 0.28, 1.7], b: [0.58, 0.38, 1.55] },
+    { t: 'media/speak/flat.webp', cap: "Close up: the green strokes", a: [0.55, 0.04, 1.6], b: [0.85, 0.22, 1.5] },
+    { t: 'media/speak/flat.webp', cap: "Close up: the red swirl", a: [0.12, 0.45, 1.6], b: [0.55, 0.68, 1.5] },
+    { t: 'media/speak/flat.webp', cap: "Close up: the blue", a: [0.4, 0.78, 1.6], b: [0.78, 0.96, 1.5] }
+  ];
+  Object.assign(WORKS[13], { name: 'Speak', year: 'November 2026', price: 95, sold: false,
+    prints: [['A6', '105 \u00d7 148 mm', 15], ['A5', '148 \u00d7 210 mm', 18], ['A4', '210 \u00d7 297 mm', 28]],
+    w: 1100, h: 1793, ar: 1100 / 1793, meta: 'Watercolour on sketch paper \u00b7 A5',
+    medium: 'Watercolour', size: 'A5', support: 'Sketch paper',
+    about: 'An A5 original, painted in watercolour on sketch paper.',
+    img: 'media/speak/listing-thumb.webp', full: 'media/speak/listing.webp',
+    alt: 'Speak, a watercolour. A loose swirl of crimson, pink and white sits at the centre like a head, with a bold yellow cross painted over where the face would be. Green brush strokes burst up and to the right from the top like hair, with a wash of purple at the upper left. A blue shape edged in black stretches down from the bottom like shoulders, on warm paper streaked with brown.',
+    media: [{ cap: 'The original, flat.', zoom: 'media/speak/flat.webp' }],
+    wall: WALL_SPEAK });
   /* The Witch's screen wall: t is the picture (null = the listing photo); a and b are where the slow camera starts and ends, [x, y, zoom] with x and y 0..1 across the picture. */
   const WALL_WITCH = [
     { t: null, cap: "The whole drawing, top to bottom", a: [0.5, 0.0, 1.0], b: [0.5, 1.0, 1.0] },
@@ -5955,7 +5975,8 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
     box.textContent = '';
     if (!on) return;
     const list = WORKS.filter(w => w.full), mi = list.findIndex(w => w.slug === 'moment');
-    if (mi > 0) list.unshift(list.splice(mi, 1)[0]);                                  // the wall opens on The Moment; the rest follow in their usual order
+    if (mi > 0) list.unshift(list.splice(mi, 1)[0]);                                  // the wall opens on The Moment; then Speak; the rest follow in their usual order
+    const si = list.findIndex(w => w.name === 'Speak'); if (si > 1) list.splice(1, 0, list.splice(si, 1)[0]);
     const it = { name: 'the work', slug: 'hub', hub: true, wall: list.map((w, k) => ({ t: w.full, cap: w.name, href: '#' + w.id, img: w.img || w.full, sub: [w.meta, w.sold ? 'Sold' : w.kept && w.prints ? 'Prints from \u00a3' + Math.min(...w.prints.map(q => q[2])) : (w.price ? '\u00a3' + w.price : '')].filter(Boolean).join('\n'), a: [0.5, 0.0, 1.0], b: [0.5, 1.0, 1.06] })) };
     box.innerHTML = wallHTML(it);
     const stopWall = wireWall(box, it), stopSp = wallSparks(box);
