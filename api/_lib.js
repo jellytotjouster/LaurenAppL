@@ -167,6 +167,12 @@ export async function scoresGet(store, me, fresh = false, now = Date.now()) {
   return json(200, { rows: merged.slice(0, TOP_SCORES), mine: hit ? { ...hit, own: own.score } : null });
 }
 
+/* For the link page (/links): only the best score and its name. It is kept at the edge for a minute, so a busy bio link cannot use up the free storage plan's reads. */
+export async function scoresTop(store, now = Date.now()) {
+  const top = oneRowPerName(await readBoard(store, false, now), null)[0];
+  return { status: 200, type: 'application/json; charset=utf-8', body: JSON.stringify({ top: top ? { name: top.name, score: top.score } : null }), headers: { 'Cache-Control': 'public, max-age=0, s-maxage=60, stale-while-revalidate=300' } };
+}
+
 export async function scoresPost(store, body, now = Date.now(), ip = '') {
   if (!body || typeof body !== 'object') return json(400, { error: 'bad' });
   if (typeof body.secret !== 'string' || !SECRET_RE.test(body.secret)) return json(400, { error: 'bad' });

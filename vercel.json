@@ -9,6 +9,10 @@
    "destination": "/links.html"
   },
   {
+   "source": "/scores/top.json",
+   "destination": "/api/scores?top=1"
+  },
+  {
    "source": "/write",
    "destination": "/api/write"
   },
