@@ -9,6 +9,10 @@
    "destination": "/links.html"
   },
   {
+   "source": "/p/:slug",
+   "destination": "/api/share?slug=:slug"
+  },
+  {
    "source": "/scores/top.json",
    "destination": "/api/scores?top=1"
   },

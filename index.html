@@ -19,7 +19,10 @@
 <meta property="og:title" content="LaurenAppL | Art, prints and originals">
 <meta property="og:description" content="Drawings, paintings and photography by Lauren AppL. Limited edition prints and one-off originals.">
 <meta property="og:url" content="https://laurenappl.com/">
-<meta property="og:image" content="https://laurenappl.com/media/site/og.jpg">
+<meta property="og:image" content="https://laurenappl.com/media/site/og-lauren.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="LaurenAppL, art, prints and originals">
 <meta name="twitter:card" content="summary_large_image">
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":"LaurenAppL","alternateName":["Lauren AppL","Lauren Apple","LaurenApple","Lauren Apple art","Lauren AppL art"],"url":"https://laurenappl.com/","description":"Art by Lauren AppL: drawings, paintings and photography. Limited edition prints and one-off originals, shipped from the UK."}</script>
 <style>:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style>
@@ -2457,7 +2460,7 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
     try { var a = document.createElement('textarea'); a.value = t; a.setAttribute('readonly', ''); a.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0'; document.body.appendChild(a); a.select(); a.setSelectionRange(0, t.length); var ok = document.execCommand('copy'); document.body.removeChild(a); return !!ok; } catch (e) { return false; }
   }
   function wireShare(box, p) {
-    var url = location.href.split('#')[0] + '#blog/' + p.slug, title = p.title, full = title + ' · Lozza’s Logic';
+    var url = /^https?:$/.test(location.protocol) ? location.origin + '/p/' + p.slug : location.href.split('#')[0] + '#blog/' + p.slug, title = p.title, full = title + ' · Lozza’s Logic';
     var touch = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Mac/i.test(navigator.platform));
     var enc = encodeURIComponent, panels = [];
     var LINKS = {
