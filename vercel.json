@@ -5,6 +5,10 @@
    "destination": "/api/admin"
   },
   {
+   "source": "/links",
+   "destination": "/links.html"
+  },
+  {
    "source": "/write",
    "destination": "/api/write"
   },

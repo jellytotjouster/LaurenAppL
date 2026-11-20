@@ -1976,7 +1976,7 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
             <p class="story">I’ve recently rediscovered my creativity and love making art- whether that’s drawing, painting or photography- I am here for all of it! I’m also teaching myself game design and animation. Doing this full time would be amazing and make my life a little bit sparkly so, armed with the cheek of job should you wish to support my endeavours feel free to contribute here</p>
             <div class="row"><a class="btn primary big" href="https://www.paypal.com/donate/?business=TCUYGLMXHJ6VY&amp;no_recurring=0&amp;item_name=Support+LaurenAppL&amp;currency_code=GBP" target="_blank" rel="noopener">Contribute with PayPal</a></div>
             <p class="story">Full disclosure- I use ai tools to help bring my hand drawn/painted artworks to life - unashamedly.</p>
-            <p class="story">I’ll be sharing self taught journey on my LaurenAppLStudios TikTok <a href="https://www.tiktok.com/@bizzarrebella__" target="_blank" rel="noopener">@bizzarrebella__</a>. You can catch me live on TikTok <a href="https://www.tiktok.com/@Laurenapple666" target="_blank" rel="noopener">@Laurenapple666</a>.</p>
+            <p class="story">I’ll be sharing self taught journey on my LaurenAppLStudios TikTok <a href="https://www.tiktok.com/@bizzarrebella__" target="_blank" rel="noopener">@bizzarrebella__</a>. You can catch me live on TikTok <a href="https://www.tiktok.com/@laurenappl666" target="_blank" rel="noopener">@laurenappl666</a>.</p>
             <p class="story">Laters!</p>
             <div class="row"><a class="btn big" href="#shop">Visit the shop</a></div>
             <p class="small muted">Write to <a href="mailto:hello@laurenappl.com">hello@laurenappl.com</a></p>
@@ -3844,10 +3844,20 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
       try {
         if (!SIL) { SIL = new Audio(silentWavUri()); SIL.loop = true; SIL.setAttribute('playsinline', ''); }
         const pr = SIL.play(); if (pr && pr.catch) pr.catch(() => {});
+        mediaCard();
         unlockHow.push('silent track');
       } catch (e) {}
     }
   }
+  /* what iOS shows on the lock screen while the silent track is running: the signed logo (black letters, crimson signature) instead of the small app icon, with the page's own title */
+  function mediaCard() {
+    try {
+      if (!('mediaSession' in navigator) || typeof MediaMetadata === 'undefined') return;
+      navigator.mediaSession.metadata = new MediaMetadata({ title: document.title || 'LaurenAppL', artist: 'LaurenAppL', album: 'laurenappl.com',
+        artwork: [{ src: '/media/site/artwork-512.png', sizes: '512x512', type: 'image/png' }, { src: '/media/site/artwork-1024.png', sizes: '1024x1024', type: 'image/png' }] });
+    } catch (e) {}
+  }
+  window.addEventListener('hashchange', () => { if (SIL) setTimeout(mediaCard, 400); });
   function releaseSilent() { try { if (SIL) SIL.pause(); } catch (e) {} }
   function soundStatus(extra) {                       // one line in the lab, so a silent phone can say why
     const n = $('#soundNote'); if (!n) return;
