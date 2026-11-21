@@ -453,7 +453,17 @@ html[data-bn="c"] .bn-t { margin-inline: auto; } html[data-bn="c"] .bn-s { margi
 .cm[open] summary i { transform: rotate(-135deg); margin-top: 4px; }
 .cm-in { padding: 4px 18px 18px; display: grid; gap: 16px; }
 .cl { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
-.cl li { border-bottom: 1px solid var(--line); padding-bottom: 12px; } .cl p { margin: 4px 0 0; }
+.cl li { border-bottom: 1px solid var(--line); padding-bottom: 12px; display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 12px; align-items: start; } .cl p { margin: 4px 0 0; overflow-wrap: anywhere; }
+.av { display: block; width: 44px; height: 44px; border-radius: 50%; object-fit: cover; background: var(--panel); } .av.s { width: 28px; height: 28px; }
+.cl .cr { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 10px; align-items: start; }
+.av-pick { border: 0; margin: 0; padding: 0; min-width: 0; display: grid; gap: 8px; } .av-pick legend { font-size: 13px; font-weight: 600; padding: 0; margin-bottom: 6px; }
+.av-row { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; }
+.av-opt { position: relative; display: block; cursor: pointer; } .av-opt[hidden] { display: none; }
+.av-opt input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.av-opt .fr { display: block; width: 54px; height: 54px; padding: 3px; border: 2px solid transparent; border-radius: 50%; } .av-opt .fr img, .av-opt .fr .q { display: block; width: 44px; height: 44px; border-radius: 50%; object-fit: cover; }
+.av-opt .q { display: grid !important; place-items: center; border: 2px dashed var(--line2); font-weight: 700; color: var(--muted); box-sizing: border-box; background: var(--panel); }
+.av-opt input:checked + .fr { border-color: #AC001C; } .av-opt input:focus-visible + .fr { outline: 2px solid var(--focus); outline-offset: 2px; }
+#cm-form .av-up { font: inherit; font-size: 13px; padding: 7px 12px; border: 1px solid var(--line2); border-radius: 99px; background: #fff; color: var(--ink); cursor: pointer; }
 .cl small { color: var(--muted); } .wait-chip { font-style: normal; background: #F8EBCF; color: #8A5A00; padding: 1px 8px; border-radius: 99px; }
 #cm-form { display: grid; gap: 8px; } #cm-form label { font-size: 13px; font-weight: 600; }
 #cm-form input[type=text], #cm-form input[type=email], #cm-form textarea { width: 100%; font: inherit; padding: 9px 11px; border: 1px solid var(--line2); border-radius: 9px; background: #fff; color: var(--ink); }
@@ -2246,8 +2256,8 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
           });
         });
       },
-      comment: function (slug, name, text, email) {
-        return call('POST', 'api/blog', { action: 'comment', slug: slug, name: name, text: text, website: '', notify: !!email, email: email || '' }).then(function () { var r = rec(slug); r.err = ''; return r; }, function (e) { var r = rec(slug); r.err = e.code || 'net'; return r; });
+      comment: function (slug, name, text, email, avatar, photo) {
+        return call('POST', 'api/blog', { action: 'comment', slug: slug, name: name, text: text, website: '', notify: !!email, email: email || '', avatar: avatar || '', photo: photo || '' }).then(function () { var r = rec(slug); r.err = ''; return r; }, function (e) { var r = rec(slug); r.err = e.code || 'net'; return r; });
       }
     };
   })();
@@ -2386,10 +2396,18 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
       });
     });
   }
-  function commentsHTML(r) {
+  var CHARS = [['tristan', 'Tristan'], ['trixie', 'Trixie'], ['sponge', 'Sponge'], ['bunny', 'Bunny']];
+  function avSrc(c, slug) { return c.a === 'photo' && /^[0-9a-f]{12}$/.test(String(c.id)) ? 'api/blog?av=' + c.id + '&s=' + encodeURIComponent(slug) : 'media/avatar/' + (/^(tristan|trixie|sponge|bunny)$/.test(c.a) ? c.a : 'tristan') + '.webp'; }
+  function avOpts() {
+    return '<label class="av-opt" title="Surprise me"><input type="radio" name="cm-av" value="" checked aria-label="Surprise me"><span class="fr"><span class="q" aria-hidden="true">?</span></span></label>' +
+      CHARS.map(function (a) { return '<label class="av-opt" title="' + a[1] + '"><input type="radio" name="cm-av" value="' + a[0] + '" aria-label="' + a[1] + '"><span class="fr"><img src="media/avatar/' + a[0] + '.webp" alt="" width="44" height="44" loading="lazy"></span></label>'; }).join('') +
+      '<label class="av-opt" id="av-photo-o" title="Your photo" hidden><input type="radio" name="cm-av" value="photo" aria-label="Your photo"><span class="fr"><img id="av-photo-img" alt="" width="44" height="44"></span></label>' +
+      '<button type="button" class="av-up" id="av-up">Upload a photo</button><input type="file" id="av-file" accept="image/*" hidden>';
+  }
+  function commentsHTML(r, slug) {
     var list = r.comments.map(function (c) {
-      return '<li><b>' + esc(c.n) + '</b> <small>' + esc(dnum(c.d || (c.at ? ldnDay(c.at) : ''))) + (c.pending ? ' · <i class="wait-chip">Waiting for approval</i>' : '') + '</small><p>' + esc(c.t).replace(/\n/g, '<br>') + '</p>' +
-        (c.r && c.r.t ? '<div class="cr"><b>Lauren</b> <small>' + esc(dnum(c.r.at ? ldnDay(c.r.at) : '')) + '</small><p>' + esc(c.r.t).replace(/\n/g, '<br>') + '</p></div>' : '') + '</li>';
+      return '<li><img class="av" src="' + esc(avSrc(c, slug)) + '" alt="" width="44" height="44" loading="lazy" decoding="async"><div><b>' + esc(c.n) + '</b> <small>' + esc(dnum(c.d || (c.at ? ldnDay(c.at) : ''))) + (c.pending ? ' · <i class="wait-chip">Waiting for approval</i>' : '') + '</small><p>' + esc(c.t).replace(/\n/g, '<br>') + '</p>' +
+        (c.r && c.r.t ? '<div class="cr"><img class="av s" src="favicon-192.png" alt="" width="28" height="28" loading="lazy"><div><b>Lauren</b> <small>' + esc(dnum(c.r.at ? ldnDay(c.r.at) : '')) + '</small><p>' + esc(c.r.t).replace(/\n/g, '<br>') + '</p></div></div>' : '') + '</div></li>';
     }).join('');
     return list ? '<ul class="cl">' + list + '</ul>' : '<p class="muted small">No comments yet. Be the first.</p>';
   }
@@ -2414,6 +2432,7 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
         '<details class="cm" id="cm"><summary><span>Comments <b id="cm-n">0</b></span><i aria-hidden="true"></i></summary><div class="cm-in"><div id="cm-list"></div>' +
           '<form id="cm-form" novalidate><label for="cm-name">Name <small>(optional)</small></label><input id="cm-name" type="text" maxlength="40" autocomplete="nickname">' +
           '<label for="cm-text">Comment</label><textarea id="cm-text" rows="4" maxlength="1000" required></textarea>' +
+          '<fieldset class="av-pick"><legend>Your picture <small>(optional)</small></legend><div class="av-row" id="av-row">' + avOpts() + '</div><p class="muted small" id="av-note">If you do not choose, one of my characters is picked for you.</p></fieldset>' +
           '<label class="cm-chk" for="cm-want"><input type="checkbox" id="cm-want" aria-controls="cm-em" aria-expanded="false"><span>Email me when Lauren replies to my comment</span></label>' +
           '<div id="cm-em" hidden><label for="cm-email">Your email</label><input id="cm-email" type="email" maxlength="120" autocomplete="email" inputmode="email">' +
             '<p class="muted small">I will send you one email when I reply, and then delete your address from the comment. It is never shown on the blog. <a href="#privacy">Privacy</a></p></div>' +
@@ -2430,7 +2449,7 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
       function paint(r) {
         $q('#ps-top', box).innerHTML = stat('eye', r.views, 'views') + stat('heart', r.heart, 'hearts') + stat('thumb', r.thumb, 'thumbs up');
         ['heart', 'thumb'].forEach(function (k) { var b = $q('.rb[data-k=' + k + ']', box); b.querySelector('b').textContent = r[k]; b.setAttribute('aria-pressed', String(!!r.mine[k])); });
-        $q('#cm-n', box).textContent = r.comments.length; $q('#cm-list', box).innerHTML = commentsHTML(r);
+        $q('#cm-n', box).textContent = r.comments.length; $q('#cm-list', box).innerHTML = commentsHTML(r, p.slug);
         if (!cmAuto && r.comments.length) { cmAuto = true; $q('#cm', box).open = true; }
       }
       $q('#cm > summary', box).addEventListener('click', function () { cmAuto = true; });
@@ -2447,17 +2466,48 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
         var want = f['cm-want'].checked, em = f['cm-email'].value.trim();
         if (want && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(em)) { msg.textContent = ERR.email; f['cm-email'].focus(); return; }
         var go = f.querySelector('button[type=submit]'); go.disabled = true;
-        Eng.comment(p.slug, f['cm-name'].value.trim(), t, want ? em : '').then(function (r) {
+        var pick = (box.querySelector('input[name=cm-av]:checked') || {}).value || '';
+        if (pick === 'photo' && !photoData) pick = '';
+        Eng.comment(p.slug, f['cm-name'].value.trim(), t, want ? em : '', pick === 'photo' ? '' : pick, pick === 'photo' ? photoData : '').then(function (r) {
           go.disabled = false;
           if (r.err) { msg.textContent = ERR[r.err] || ERR.net; return; }
+          photoData = ''; $q('#av-photo-o', box).hidden = true; box.querySelector('input[name=cm-av][value=""]').checked = true; $q('#av-up', box).textContent = 'Upload a photo'; $q('#av-note', box).textContent = AVNOTE;
           f['cm-text'].value = ''; f['cm-email'].value = ''; f['cm-want'].checked = false; $q('#cm-em', box).hidden = true; f['cm-want'].setAttribute('aria-expanded', 'false');
           msg.textContent = 'Thank you. Your comment will show for everyone once it has been approved.' + (want ? ' I will email you when I reply.' : ''); paint(r);
         });
+      });
+      var photoData = '', AVNOTE = 'If you do not choose, one of my characters is picked for you.';
+      function avNote() { var v = (box.querySelector('input[name=cm-av]:checked') || {}).value; $q('#av-note', box).textContent = v === 'photo' ? 'Your photo shows beside your comment, for everyone, once I have approved it. Please only use one you are happy for everyone to see.' : AVNOTE; }
+      Array.prototype.forEach.call(box.querySelectorAll('input[name=cm-av]'), function (i) { i.addEventListener('change', avNote); });
+      $q('#av-up', box).addEventListener('click', function () { $q('#av-file', box).click(); });
+      $q('#av-file', box).addEventListener('change', function (e) {
+        var file = e.target.files && e.target.files[0], note = $q('#av-note', box); e.target.value = '';
+        if (!file) return;
+        if (!/^image\//.test(file.type) || file.size > 20 * 1024 * 1024) { note.textContent = ERR.photo; return; }
+        shrinkPhoto(file).then(function (d) {
+          photoData = d; var o = $q('#av-photo-o', box); o.hidden = false; $q('#av-photo-img', box).src = d; o.querySelector('input').checked = true; $q('#av-up', box).textContent = 'Change photo'; avNote();
+        }, function () { note.textContent = ERR.photo; });
       });
       $q('#cm-want', box).addEventListener('change', function (e) { var on = e.target.checked; $q('#cm-em', box).hidden = !on; e.target.setAttribute('aria-expanded', String(on)); if (on) $q('#cm-email', box).focus(); });
     });
   }
   function $q(s, r) { return (r || document).querySelector(s); }
+  /* a profile photo is shrunk here, in the browser, to a 96 pixel square JPEG of a few kilobytes: it is only ever sent with a comment, and I look at it before the comment shows */
+  function shrinkPhoto(file) {
+    return new Promise(function (ok, no) {
+      var u = URL.createObjectURL(file), im = new Image();
+      im.onload = function () {
+        try {
+          var s = 96, c = document.createElement('canvas'), x, m = Math.min(im.naturalWidth, im.naturalHeight), q = .82, d;
+          c.width = c.height = s; x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, s, s);
+          x.drawImage(im, (im.naturalWidth - m) / 2, (im.naturalHeight - m) * 0.3, m, m, 0, 0, s, s);       // a square from the middle, a little above centre (faces sit high)
+          d = c.toDataURL('image/jpeg', q); while (d.length > 16000 && q > .3) { q -= .12; d = c.toDataURL('image/jpeg', q); }
+          URL.revokeObjectURL(u); if (d.length > 16000 || d.indexOf('data:image/jpeg') !== 0) no(); else ok(d);
+        } catch (e) { URL.revokeObjectURL(u); no(e); }
+      };
+      im.onerror = function () { URL.revokeObjectURL(u); no(); }; im.src = u;
+    });
+  }
 
   /* ---- share this post: a small Share button at the top and another under the post; the apps open on a click. The apps that take a link from a web page open with it filled in; Instagram and TikTok do not allow that, so those two copy the link ready to paste ---- */
   function shareBtn(k, small) {
@@ -2522,7 +2572,7 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
       panel.addEventListener('keydown', function (e) { if (e.key === 'Escape') { set(false); btn.focus(); } });
     });
   }
-  var ERR = { busy: 'The hearts and comments are having a rest for a while. Please try again later.', slow: 'That is a lot at once. Give it a little while and try again.', links: 'Please leave out web links. It keeps the spam away.', full: 'There are plenty of comments waiting on this one. Please try again later.', empty: 'Write something first.', email: 'That email address does not look right. Check it, or untick the box.', net: 'That did not go through. Check your connection and try again.' };
+  var ERR = { busy: 'The hearts and comments are having a rest for a while. Please try again later.', slow: 'That is a lot at once. Give it a little while and try again.', links: 'Please leave out web links. It keeps the spam away.', full: 'There are plenty of comments waiting on this one. Please try again later.', empty: 'Write something first.', email: 'That email address does not look right. Check it, or untick the box.', photo: 'That picture could not be used. Try a different one, or pick one of the characters.', net: 'That did not go through. Check your connection and try again.' };
 
   /* ---- the note on Home, under the washing line ---- */
   var seed = 55, R = (function (s) { return function () { s = (s + 0x6D2B79F5) | 0; var t = Math.imul(s ^ (s >>> 15), 1 | s); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; })(seed);
@@ -6619,7 +6669,7 @@ void main() {
 <li><strong>When you email me.</strong> Your email address and what you write. I use them to reply. I keep the conversation for as long as it is useful, or for as long as the law asks if it is about an order.</li>
 <li><strong>When you ask me to tell you something</strong> (when an original goes on sale, when the animations are up, or if I start framing). Your email address and what you asked about. I use them only to send you that message, then I delete them, or sooner if you ask. The list is kept privately and only I can see it.</li>
 <li><strong>When you save a score in the game.</strong> The name you type and your score. They appear on the public High scores board, so use a nickname if you would rather not use your own. Your browser also keeps a random code that lets you update your own entry and no one else’s; it is not linked to anything else. Email me and I’ll remove your entry.</li>
-<li><strong>When you read or comment on the blog (Lozza’s Logic).</strong> Views, hearts and thumbs up are only counted; nothing in the count says who you are. If you leave a comment, I keep the name you type (or “Anonymous”) and what you write. I read every comment before it can show; once it does, it is public with that name beside it, so use a nickname if you would rather not use your own. Email me and I’ll remove it. If you tick “Email me when Lauren replies”, I also keep the email address you give, privately and with that comment only, so that I can send you one email when I reply. I delete the address as soon as that email has gone (or when I remove your comment), and every such email has a link to delete it from any other comments of yours too. I use an email service to send it, and it sees your address for that. Your agreement is the reason in law.</li>
+<li><strong>When you read or comment on the blog (Lozza’s Logic).</strong> Views, hearts and thumbs up are only counted; nothing in the count says who you are. If you leave a comment, I keep the name you type (or “Anonymous”) and what you write. I read every comment before it can show; once it does, it is public with that name beside it, so use a nickname if you would rather not use your own. Email me and I’ll remove it. If you choose a profile picture, it is either one of my characters or a small photo you add (shrunk to a tiny square in your browser). A photo is kept with your comment and, once I approve the comment, shows beside it for everyone; I delete it when I remove the comment, or sooner if you email me. If you tick “Email me when Lauren replies”, I also keep the email address you give, privately and with that comment only, so that I can send you one email when I reply. I delete the address as soon as that email has gone (or when I remove your comment), and every such email has a link to delete it from any other comments of yours too. I use an email service to send it, and it sees your address for that. Your agreement is the reason in law.</li>
 <li><strong>When you subscribe to blog updates.</strong> I keep the email address you give, which kinds of post you ticked, and the date, only to email you when there is a new post of a kind you chose. Every email has a link to change your choices or to stop them, and stopping removes your address from the blog list. I use an email service to send them, and it sees your address for that. Your agreement is the reason in law, and you can take it back at any time by using that link or emailing me.</li>
 <li><strong>When you visit.</strong> I count visits with Vercel Web Analytics. It sets no cookies and does not follow you from site to site. It records which page or artwork was looked at, the country you are in, your type of device and browser, and which site sent you here. Nothing in it says who you are, and only I can see the totals.</li>
 <li><strong>When the site crashes or runs far too slowly on your phone.</strong> A short, anonymous note is sent: your phone’s browser and system version, its screen size and what the page was doing just before it stopped. Nothing in it says who you are, and I keep only the latest sixty. I use it to find and fix the problem.</li>

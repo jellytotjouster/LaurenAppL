@@ -447,6 +447,23 @@ export async function reportPost(store, body, ip, now = Date.now()) {
 const SLUG_RE = /^[a-z0-9][a-z0-9-]{0,59}$/;
 const BLOG_TTL = 60000, VIEW_FLUSH = 3 * 3600e3, BLOG_SAVES = 400, BLOG_VIEW_SAVES = 300;
 const BLOG_MAX_POSTS = 500, BLOG_MAX_COMMENTS = 150, BLOG_MAX_PENDING_POST = 25, BLOG_MAX_PENDING = 100;
+/* A little profile picture beside a comment: one of Lauren's four characters (picked by the commenter, or by chance if they do not choose), or a small photo of their own.
+   A photo is a 96-pixel JPEG made in their browser and kept in its own small file (data/av/<comment id>.json) so it never weighs down the comments file; it is only served once the comment is approved,
+   and it is overwritten with nothing when the comment or the photo is removed. */
+const AVATARS = ['tristan', 'trixie', 'sponge', 'bunny'];
+const avDefault = id => AVATARS[parseInt(String(id).slice(0, 6), 16) % AVATARS.length] || AVATARS[0];
+const avOf = c => c && c.a === 'photo' ? 'photo' : c && AVATARS.includes(c.a) ? c.a : avDefault(c && c.id);
+const ID_RE = /^[0-9a-f]{12}$/, AV_PATH = id => 'data/av/' + id + '.json';
+function jpegOf(url) {                                                              // the bytes of a small real JPEG, or null
+  const m = /^data:image\/jpeg;base64,([A-Za-z0-9+/]+={0,2})$/.exec(String(url == null ? '' : url));
+  if (!m || m[1].length > 17500) return null;
+  const b = Buffer.from(m[1], 'base64');
+  return b.length >= 200 && b.length <= 13000 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff && b[b.length - 2] === 0xff && b[b.length - 1] === 0xd9 ? b : null;
+}
+async function dropPhoto(store, id) {
+  if (!ID_RE.test(String(id))) return;
+  try { await update(store, AV_PATH(id), d => d && d.d ? { next: { gone: 1 }, out: 1 } : null); } catch (e) { /* the comment itself is already gone; a tiny leftover is overwritten next time */ }
+}
 const blog = { store: null, at: 0, data: null, pend: new Map(), lastFlush: 0 };
 const forgetBlog = () => { blog.data = null; blog.at = 0; };
 const monthOf = now => new Date(now).toISOString().slice(0, 7);
@@ -460,7 +477,7 @@ const blogRec = (b, slug) => { const r = b.posts[slug] || (b.posts[slug] = { v: 
 const blogFull = (b, slug) => !b.posts[slug] && Object.keys(b.posts).length >= BLOG_MAX_POSTS;
 const blogPub = (r, withComments, extraViews = 0) => {
   const o = { v: (r ? r.v | 0 : 0) + extraViews, h: r ? r.h | 0 : 0, t: r ? r.t | 0 : 0 };
-  if (withComments) o.c = (r && Array.isArray(r.c) ? r.c : []).filter(c => c && c.ok).map(c => { const x = { id: c.id, n: c.n, t: c.t, at: c.at }; if (c.r && typeof c.r.t === 'string' && c.r.t) x.r = { t: c.r.t, at: Number(c.r.at) || 0 }; return x; });
+  if (withComments) o.c = (r && Array.isArray(r.c) ? r.c : []).filter(c => c && c.ok).map(c => { const x = { id: c.id, n: c.n, t: c.t, at: c.at, a: avOf(c) }; if (c.r && typeof c.r.t === 'string' && c.r.t) x.r = { t: c.r.t, at: Number(c.r.at) || 0 }; return x; });
   return o;
 };
 const applyViews = (b, take) => take.forEach((n, slug) => { if (!blogFull(b, slug)) blogRec(b, slug).v += n; });
@@ -507,6 +524,15 @@ export async function blogGet(store, slug, slugs, now = Date.now()) {
   return json(200, { posts: out });
 }
 
+export async function blogAvatar(store, id, slug, now = Date.now()) {              // only for an approved comment that has a photo
+  if (!ID_RE.test(String(id)) || !SLUG_RE.test(String(slug))) return json(404, { error: 'none' });
+  const d = await readBlog(store, now), r = d.posts[slug], c = r && Array.isArray(r.c) && r.c.find(x => x && x.id === id);
+  if (!c || !c.ok || c.a !== 'photo') return json(404, { error: 'none' });
+  const f = await store.read(AV_PATH(id)), b = f.data && typeof f.data.d === 'string' ? Buffer.from(f.data.d, 'base64') : null;
+  if (!b || !b.length) return json(404, { error: 'none' });
+  return { status: 200, type: 'image/jpeg', body: b, headers: { 'Cache-Control': 'public, max-age=86400', 'Content-Security-Policy': "default-src 'none'; sandbox" } };
+}
+
 export async function blogPost(store, body, now = Date.now(), ip = '') {
   if (!body || typeof body !== 'object') return json(400, { error: 'bad' });
   const slug = String(body.slug == null ? '' : body.slug), act = body.action;
@@ -544,8 +570,12 @@ export async function blogPost(store, body, now = Date.now(), ip = '') {
     if (LINKY.test(text)) return json(400, { error: 'links' });
     let mailTo = '';                                                              // "e-mail me when Lauren replies": only kept when they ticked the box and gave a real address
     if (body.notify) { mailTo = String(body.email == null ? '' : body.email).trim(); if (!EMAIL_RE.test(mailTo) || mailTo.length > 120) return json(400, { error: 'email' }); }
+    const photo = body.photo ? jpegOf(body.photo) : null;
+    if (body.photo && !photo) return json(400, { error: 'photo' });
     if (blogLimited(ip, 'com', 5, now)) return json(429, { error: 'slow' });
     const name = cleanWho(body.name) || 'Anonymous', id = crypto.randomBytes(6).toString('hex');
+    const av = photo ? 'photo' : AVATARS.includes(body.avatar) ? body.avatar : avDefault(id);
+    if (photo) await update(store, AV_PATH(id), () => ({ next: { d: photo.toString('base64') }, out: 1 }));
     const res = await update(store, 'data/blog.json', d => {
       const b = blogData(d);
       if (savesUsed(b, now) >= BLOG_SAVES) return { out: 'busy' };
@@ -553,11 +583,12 @@ export async function blogPost(store, body, now = Date.now(), ip = '') {
       const r = blogRec(b, slug); let waiting = 0;
       Object.keys(b.posts).forEach(k => { (b.posts[k].c || []).forEach(c => { if (c && !c.ok) waiting++; }); });
       if (r.c.length >= BLOG_MAX_COMMENTS || r.c.filter(c => c && !c.ok).length >= BLOG_MAX_PENDING_POST || waiting >= BLOG_MAX_PENDING) return { out: 'full' };
-      const row = { id, n: name, t: text, at: now, ok: false }; if (mailTo) row.e = mailTo;
+      const row = { id, n: name, t: text, at: now, ok: false, a: av }; if (mailTo) row.e = mailTo;
       r.c.push(row); countSave(b, now);
       return { next: b, out: 'ok' };
     });
     forgetBlog();
+    if (res !== 'ok' && photo) await dropPhoto(store, id);
     return res === 'ok' ? json(200, { ok: true, pending: true }) : json(503, { error: res });
   }
   return json(400, { error: 'bad' });
@@ -644,7 +675,7 @@ export async function adminPost(store, body) {
     const scores = (s.data && Array.isArray(s.data.rows) ? s.data.rows : []).filter(validRow).sort(byRank).map(r => { const secs = Number.isFinite(r.secs) ? r.secs : 0; return { ...pub(r), secs, by: r.by === 'owner' ? 'owner' : '', flawless: secs ? flawless(secs) : 0, look: !!(secs || r.score >= 150) && looksOff(r.score, secs) }; });
     const reports = (rp.data && Array.isArray(rp.data.list) ? rp.data.list : []).filter(r => r && Number.isFinite(r.at) && Array.isArray(r.ev));
     const bb = blogData(bl.data), comments = [], stats = [];
-    Object.keys(bb.posts).forEach(slug => { const r = bb.posts[slug] || {}; stats.push({ slug, v: r.v | 0, h: r.h | 0, t: r.t | 0 }); (Array.isArray(r.c) ? r.c : []).forEach(c => { if (c && typeof c.id === 'string') comments.push({ slug, id: c.id, n: String(c.n || ''), t: String(c.t || ''), at: c.at || 0, ok: !!c.ok, r: c.r && typeof c.r.t === 'string' ? { t: c.r.t, at: Number(c.r.at) || 0 } : null, w: !!c.e, m: !!c.m }); }); });
+    Object.keys(bb.posts).forEach(slug => { const r = bb.posts[slug] || {}; stats.push({ slug, v: r.v | 0, h: r.h | 0, t: r.t | 0 }); (Array.isArray(r.c) ? r.c : []).forEach(c => { if (c && typeof c.id === 'string') comments.push({ slug, id: c.id, n: String(c.n || ''), t: String(c.t || ''), at: c.at || 0, ok: !!c.ok, a: avOf(c), r: c.r && typeof c.r.t === 'string' ? { t: c.r.t, at: Number(c.r.at) || 0 } : null, w: !!c.e, m: !!c.m }); }); });
     comments.sort((a, b) => (a.ok - b.ok) || b.at - a.at);
     return json(200, { subs, scores, reports, comments, stats, mailReady: mailReady(), blogTopics: BLOG_TOPICS, auto: { on: !(au.data && au.data.on === false), last: au.data && au.data.last || null } });
   }
@@ -697,16 +728,33 @@ export async function adminPost(store, body) {
     return json(200, { ok: true });
   }
   if ((act === 'blogApprove' || act === 'blogRemove') && typeof body.slug === 'string' && typeof body.id === 'string') {   // the owner approves or removes a blog comment
-    await update(store, 'data/blog.json', d => {
+    const gone = await update(store, 'data/blog.json', d => {
       const b = blogData(d), r = b.posts[body.slug]; if (!r || !Array.isArray(r.c)) return null;
       const i = r.c.findIndex(c => c && c.id === body.id); if (i < 0) return null;
-      if (act === 'blogApprove') r.c[i].ok = true; else r.c.splice(i, 1);
-      return { next: b, out: 1 };
+      let photo = false;
+      if (act === 'blogApprove') r.c[i].ok = true; else { photo = r.c[i].a === 'photo'; r.c.splice(i, 1); }
+      return { next: b, out: photo ? 'photo' : 1 };
     });
     forgetBlog();
+    if (gone === 'photo') await dropPhoto(store, body.id);
     return json(200, { ok: true });
   }
   if (act === 'blogReply' && typeof body.slug === 'string' && typeof body.id === 'string') return blogReply(store, body);
+  if (act === 'blogPhoto' && typeof body.id === 'string' && ID_RE.test(body.id)) {              // so the owner can see a photo before approving it
+    const f = await store.read(AV_PATH(body.id));
+    return f.data && typeof f.data.d === 'string' ? json(200, { ok: true, d: 'data:image/jpeg;base64,' + f.data.d }) : json(404, { error: 'gone' });
+  }
+  if (act === 'blogUnphoto' && typeof body.slug === 'string' && typeof body.id === 'string') {   // keep the comment, take the photo off it (one of the characters takes its place)
+    const had = await update(store, 'data/blog.json', d => {
+      const b = blogData(d), r = b.posts[body.slug]; if (!r || !Array.isArray(r.c)) return null;
+      const c = r.c.find(x => x && x.id === body.id); if (!c || c.a !== 'photo') return null;
+      c.a = avDefault(c.id); return { next: b, out: 1 };
+    });
+    forgetBlog();
+    if (!had) return json(404, { error: 'gone' });
+    await dropPhoto(store, body.id);
+    return json(200, { ok: true });
+  }
   if (act === 'blogUnreply' && typeof body.slug === 'string' && typeof body.id === 'string') {   // take a reply back down (nobody is e-mailed about that)
     const had = await update(store, 'data/blog.json', d => {
       const b = blogData(d), r = b.posts[body.slug]; if (!r || !Array.isArray(r.c)) return null;

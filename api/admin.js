@@ -6,7 +6,7 @@ export default async function handler(req, res) {
     if (req.method === 'GET') {
       return { status: 200, type: 'text/html; charset=utf-8', body: ADMIN_HTML, headers: {
         'X-Robots-Tag': 'noindex, nofollow', 'Referrer-Policy': 'no-referrer',
-        'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        'Content-Security-Policy': "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
       } };
     }
     if (req.method !== 'POST') return json(405, { error: 'method' });
