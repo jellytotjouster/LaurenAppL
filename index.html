@@ -2426,11 +2426,14 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
         '</nav>' +
         '<p class="pend"><a class="btn" href="#blog">All the ramblings</a></p></article></div>';
       document.title = p.title + ' · LaurenAppL'; wireSub(box); wireShare(box, p);
+      var cmAuto = false;                                              // comments open by themselves once there is something to read; after that it is the reader's choice
       function paint(r) {
         $q('#ps-top', box).innerHTML = stat('eye', r.views, 'views') + stat('heart', r.heart, 'hearts') + stat('thumb', r.thumb, 'thumbs up');
         ['heart', 'thumb'].forEach(function (k) { var b = $q('.rb[data-k=' + k + ']', box); b.querySelector('b').textContent = r[k]; b.setAttribute('aria-pressed', String(!!r.mine[k])); });
         $q('#cm-n', box).textContent = r.comments.length; $q('#cm-list', box).innerHTML = commentsHTML(r);
+        if (!cmAuto && r.comments.length) { cmAuto = true; $q('#cm', box).open = true; }
       }
+      $q('#cm > summary', box).addEventListener('click', function () { cmAuto = true; });
       Eng.view(p.slug).then(function (r) { if (tok === S.tok) paint(r); });
       Array.prototype.forEach.call(box.querySelectorAll('.rb'), function (b) { b.addEventListener('click', function () {
         var pr = Eng.toggle(p.slug, b.dataset.k), rm = $q('#rb-msg', box); rm.textContent = '';
