@@ -456,7 +456,10 @@ html[data-bn="c"] .bn-t { margin-inline: auto; } html[data-bn="c"] .bn-s { margi
 .cl li { border-bottom: 1px solid var(--line); padding-bottom: 12px; } .cl p { margin: 4px 0 0; }
 .cl small { color: var(--muted); } .wait-chip { font-style: normal; background: #F8EBCF; color: #8A5A00; padding: 1px 8px; border-radius: 99px; }
 #cm-form { display: grid; gap: 8px; } #cm-form label { font-size: 13px; font-weight: 600; }
-#cm-form input[type=text], #cm-form textarea { width: 100%; font: inherit; padding: 9px 11px; border: 1px solid var(--line2); border-radius: 9px; background: #fff; color: var(--ink); }
+#cm-form input[type=text], #cm-form input[type=email], #cm-form textarea { width: 100%; font: inherit; padding: 9px 11px; border: 1px solid var(--line2); border-radius: 9px; background: #fff; color: var(--ink); }
+#cm-form label.cm-chk { display: flex; gap: 9px; align-items: flex-start; font-weight: 500; font-size: 14px; cursor: pointer; } #cm-form label.cm-chk input { margin-top: 3px; flex: none; }
+#cm-em { display: grid; gap: 6px; } #cm-em[hidden] { display: none; } #cm-em p { margin: 0; }
+.cl .cr { margin: 10px 0 0 2px; padding: 6px 0 4px 12px; border-left: 3px solid #AC001C; } .cl .cr b { color: #AC001C; } .cl .cr p { margin: 3px 0 0; }
 #cm-form .btn { justify-self: start; } .hp { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; }
 .bn-latest { white-space: normal; overflow: visible; font-size: 1.2em; }
 .bn-latest b { white-space: nowrap; }
@@ -2243,8 +2246,8 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
           });
         });
       },
-      comment: function (slug, name, text) {
-        return call('POST', 'api/blog', { action: 'comment', slug: slug, name: name, text: text, website: '' }).then(function () { var r = rec(slug); r.err = ''; return r; }, function (e) { var r = rec(slug); r.err = e.code || 'net'; return r; });
+      comment: function (slug, name, text, email) {
+        return call('POST', 'api/blog', { action: 'comment', slug: slug, name: name, text: text, website: '', notify: !!email, email: email || '' }).then(function () { var r = rec(slug); r.err = ''; return r; }, function (e) { var r = rec(slug); r.err = e.code || 'net'; return r; });
       }
     };
   })();
@@ -2385,7 +2388,8 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
   }
   function commentsHTML(r) {
     var list = r.comments.map(function (c) {
-      return '<li><b>' + esc(c.n) + '</b> <small>' + esc(dnum(c.d || (c.at ? ldnDay(c.at) : ''))) + (c.pending ? ' · <i class="wait-chip">Waiting for approval</i>' : '') + '</small><p>' + esc(c.t).replace(/\n/g, '<br>') + '</p></li>';
+      return '<li><b>' + esc(c.n) + '</b> <small>' + esc(dnum(c.d || (c.at ? ldnDay(c.at) : ''))) + (c.pending ? ' · <i class="wait-chip">Waiting for approval</i>' : '') + '</small><p>' + esc(c.t).replace(/\n/g, '<br>') + '</p>' +
+        (c.r && c.r.t ? '<div class="cr"><b>Lauren</b> <small>' + esc(dnum(c.r.at ? ldnDay(c.r.at) : '')) + '</small><p>' + esc(c.r.t).replace(/\n/g, '<br>') + '</p></div>' : '') + '</li>';
     }).join('');
     return list ? '<ul class="cl">' + list + '</ul>' : '<p class="muted small">No comments yet. Be the first.</p>';
   }
@@ -2410,6 +2414,9 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
         '<details class="cm" id="cm"><summary><span>Comments <b id="cm-n">0</b></span><i aria-hidden="true"></i></summary><div class="cm-in"><div id="cm-list"></div>' +
           '<form id="cm-form" novalidate><label for="cm-name">Name <small>(optional)</small></label><input id="cm-name" type="text" maxlength="40" autocomplete="nickname">' +
           '<label for="cm-text">Comment</label><textarea id="cm-text" rows="4" maxlength="1000" required></textarea>' +
+          '<label class="cm-chk" for="cm-want"><input type="checkbox" id="cm-want" aria-controls="cm-em" aria-expanded="false"><span>Email me when Lauren replies to my comment</span></label>' +
+          '<div id="cm-em" hidden><label for="cm-email">Your email</label><input id="cm-email" type="email" maxlength="120" autocomplete="email" inputmode="email">' +
+            '<p class="muted small">I will send you one email when I reply, and then delete your address from the comment. It is never shown on the blog. <a href="#privacy">Privacy</a></p></div>' +
           '<input class="hp" type="text" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">' +
           '<p class="muted small" id="cm-msg">Be kind. Comments are checked before they show for everyone.</p><button class="btn" type="submit">Post comment</button></form></div></details>' +
         subHTML('Enjoyed this? Get an email when the next one is up.', p.groups) +
@@ -2434,13 +2441,17 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
         e.preventDefault(); var f = e.target, t = f['cm-text'].value.trim(), msg = $q('#cm-msg', box);
         if (f.website.value) return;                                  // a hidden field only a bot fills in
         if (!t) { msg.textContent = 'Write something first.'; return; }
+        var want = f['cm-want'].checked, em = f['cm-email'].value.trim();
+        if (want && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(em)) { msg.textContent = ERR.email; f['cm-email'].focus(); return; }
         var go = f.querySelector('button[type=submit]'); go.disabled = true;
-        Eng.comment(p.slug, f['cm-name'].value.trim(), t).then(function (r) {
+        Eng.comment(p.slug, f['cm-name'].value.trim(), t, want ? em : '').then(function (r) {
           go.disabled = false;
           if (r.err) { msg.textContent = ERR[r.err] || ERR.net; return; }
-          f['cm-text'].value = ''; msg.textContent = 'Thank you. Your comment will show for everyone once it has been approved.'; paint(r);
+          f['cm-text'].value = ''; f['cm-email'].value = ''; f['cm-want'].checked = false; $q('#cm-em', box).hidden = true; f['cm-want'].setAttribute('aria-expanded', 'false');
+          msg.textContent = 'Thank you. Your comment will show for everyone once it has been approved.' + (want ? ' I will email you when I reply.' : ''); paint(r);
         });
       });
+      $q('#cm-want', box).addEventListener('change', function (e) { var on = e.target.checked; $q('#cm-em', box).hidden = !on; e.target.setAttribute('aria-expanded', String(on)); if (on) $q('#cm-email', box).focus(); });
     });
   }
   function $q(s, r) { return (r || document).querySelector(s); }
@@ -2508,7 +2519,7 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
       panel.addEventListener('keydown', function (e) { if (e.key === 'Escape') { set(false); btn.focus(); } });
     });
   }
-  var ERR = { busy: 'The hearts and comments are having a rest for a while. Please try again later.', slow: 'That is a lot at once. Give it a little while and try again.', links: 'Please leave out web links. It keeps the spam away.', full: 'There are plenty of comments waiting on this one. Please try again later.', empty: 'Write something first.', net: 'That did not go through. Check your connection and try again.' };
+  var ERR = { busy: 'The hearts and comments are having a rest for a while. Please try again later.', slow: 'That is a lot at once. Give it a little while and try again.', links: 'Please leave out web links. It keeps the spam away.', full: 'There are plenty of comments waiting on this one. Please try again later.', empty: 'Write something first.', email: 'That email address does not look right. Check it, or untick the box.', net: 'That did not go through. Check your connection and try again.' };
 
   /* ---- the note on Home, under the washing line ---- */
   var seed = 55, R = (function (s) { return function () { s = (s + 0x6D2B79F5) | 0; var t = Math.imul(s ^ (s >>> 15), 1 | s); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; })(seed);
@@ -6605,7 +6616,7 @@ void main() {
 <li><strong>When you email me.</strong> Your email address and what you write. I use them to reply. I keep the conversation for as long as it is useful, or for as long as the law asks if it is about an order.</li>
 <li><strong>When you ask me to tell you something</strong> (when an original goes on sale, when the animations are up, or if I start framing). Your email address and what you asked about. I use them only to send you that message, then I delete them, or sooner if you ask. The list is kept privately and only I can see it.</li>
 <li><strong>When you save a score in the game.</strong> The name you type and your score. They appear on the public High scores board, so use a nickname if you would rather not use your own. Your browser also keeps a random code that lets you update your own entry and no one else’s; it is not linked to anything else. Email me and I’ll remove your entry.</li>
-<li><strong>When you read or comment on the blog (Lozza’s Logic).</strong> Views, hearts and thumbs up are only counted; nothing in the count says who you are. If you leave a comment, I keep the name you type (or “Anonymous”) and what you write. I read every comment before it can show; once it does, it is public with that name beside it, so use a nickname if you would rather not use your own. Email me and I’ll remove it.</li>
+<li><strong>When you read or comment on the blog (Lozza’s Logic).</strong> Views, hearts and thumbs up are only counted; nothing in the count says who you are. If you leave a comment, I keep the name you type (or “Anonymous”) and what you write. I read every comment before it can show; once it does, it is public with that name beside it, so use a nickname if you would rather not use your own. Email me and I’ll remove it. If you tick “Email me when Lauren replies”, I also keep the email address you give, privately and with that comment only, so that I can send you one email when I reply. I delete the address as soon as that email has gone (or when I remove your comment), and every such email has a link to delete it from any other comments of yours too. I use an email service to send it, and it sees your address for that. Your agreement is the reason in law.</li>
 <li><strong>When you subscribe to blog updates.</strong> I keep the email address you give, which kinds of post you ticked, and the date, only to email you when there is a new post of a kind you chose. Every email has a link to change your choices or to stop them, and stopping removes your address from the blog list. I use an email service to send them, and it sees your address for that. Your agreement is the reason in law, and you can take it back at any time by using that link or emailing me.</li>
 <li><strong>When you visit.</strong> I count visits with Vercel Web Analytics. It sets no cookies and does not follow you from site to site. It records which page or artwork was looked at, the country you are in, your type of device and browser, and which site sent you here. Nothing in it says who you are, and only I can see the totals.</li>
 <li><strong>When the site crashes or runs far too slowly on your phone.</strong> A short, anonymous note is sent: your phone’s browser and system version, its screen size and what the page was doing just before it stopped. Nothing in it says who you are, and I keep only the latest sixty. I use it to find and fix the problem.</li>

@@ -234,6 +234,7 @@ function tooMany(ip, now) {
 export async function notifyPost(store, body, ip, now = Date.now()) {
   if (!body || typeof body !== 'object') return json(400, { error: 'bad' });
   if (body.unsub && typeof body.unsub === 'object') return notifyPrefs(store, body.unsub.u, body.unsub.t, body.unsub.topics);
+  if (body.cstop && typeof body.cstop === 'object') return cmtStop(store, body.cstop.u, body.cstop.t);
   if (body.website) return json(200, { ok: true });                                  // the hidden field only a bot fills in: look as if it worked
   const email = String(body.email == null ? '' : body.email).trim();
   if (!EMAIL_RE.test(email) || email.length > 120) return json(400, { error: 'email' });
@@ -459,7 +460,7 @@ const blogRec = (b, slug) => { const r = b.posts[slug] || (b.posts[slug] = { v: 
 const blogFull = (b, slug) => !b.posts[slug] && Object.keys(b.posts).length >= BLOG_MAX_POSTS;
 const blogPub = (r, withComments, extraViews = 0) => {
   const o = { v: (r ? r.v | 0 : 0) + extraViews, h: r ? r.h | 0 : 0, t: r ? r.t | 0 : 0 };
-  if (withComments) o.c = (r && Array.isArray(r.c) ? r.c : []).filter(c => c && c.ok).map(c => ({ id: c.id, n: c.n, t: c.t, at: c.at }));
+  if (withComments) o.c = (r && Array.isArray(r.c) ? r.c : []).filter(c => c && c.ok).map(c => { const x = { id: c.id, n: c.n, t: c.t, at: c.at }; if (c.r && typeof c.r.t === 'string' && c.r.t) x.r = { t: c.r.t, at: Number(c.r.at) || 0 }; return x; });
   return o;
 };
 const applyViews = (b, take) => take.forEach((n, slug) => { if (!blogFull(b, slug)) blogRec(b, slug).v += n; });
@@ -541,6 +542,8 @@ export async function blogPost(store, body, now = Date.now(), ip = '') {
     const text = cleanBlock(body.text, 1000);
     if (!text) return json(400, { error: 'empty' });
     if (LINKY.test(text)) return json(400, { error: 'links' });
+    let mailTo = '';                                                              // "e-mail me when Lauren replies": only kept when they ticked the box and gave a real address
+    if (body.notify) { mailTo = String(body.email == null ? '' : body.email).trim(); if (!EMAIL_RE.test(mailTo) || mailTo.length > 120) return json(400, { error: 'email' }); }
     if (blogLimited(ip, 'com', 5, now)) return json(429, { error: 'slow' });
     const name = cleanWho(body.name) || 'Anonymous', id = crypto.randomBytes(6).toString('hex');
     const res = await update(store, 'data/blog.json', d => {
@@ -550,13 +553,82 @@ export async function blogPost(store, body, now = Date.now(), ip = '') {
       const r = blogRec(b, slug); let waiting = 0;
       Object.keys(b.posts).forEach(k => { (b.posts[k].c || []).forEach(c => { if (c && !c.ok) waiting++; }); });
       if (r.c.length >= BLOG_MAX_COMMENTS || r.c.filter(c => c && !c.ok).length >= BLOG_MAX_PENDING_POST || waiting >= BLOG_MAX_PENDING) return { out: 'full' };
-      r.c.push({ id, n: name, t: text, at: now, ok: false }); countSave(b, now);
+      const row = { id, n: name, t: text, at: now, ok: false }; if (mailTo) row.e = mailTo;
+      r.c.push(row); countSave(b, now);
       return { next: b, out: 'ok' };
     });
     forgetBlog();
     return res === 'ok' ? json(200, { ok: true, pending: true }) : json(503, { error: res });
   }
   return json(400, { error: 'bad' });
+}
+
+/* ---------- replying to a comment ----------
+   Lauren replies from the owner page. The reply shows under the comment on the blog (and replying also approves the comment, since a reply to something nobody can see makes no sense).
+   If the person ticked "e-mail me when Lauren replies", they get one e-mail with her reply and the address is deleted from the comment straight afterwards, so it is only ever kept until the reply has been sent.
+   If sending fails the address is put back, so saving the reply again sends it again. The address is never shown on the blog and not even on the owner page. */
+const cmtSig = email => { const k = process.env.ADMIN_KEY; return typeof k === 'string' && k.length >= 16 ? crypto.createHmac('sha256', k).update('cmt:' + String(email).toLowerCase()).digest('hex').slice(0, 32) : ''; };
+export const cmtLink = email => SITE_ORIGIN + '/api/notify?c=' + b64u(String(email).toLowerCase()) + '&t=' + cmtSig(email);
+const quoteOf = (s, n) => mailText(s, n).split('\n').map(l => '> ' + l).join('\n');
+async function sendReplyMail(store, o) {
+  try {
+    let title = '';
+    try { const ps = await livePostsForMail(store, o.now); const p = ps && ps.find(x => x && x.slug === o.slug); title = p && p.title ? mailText(p.title, 100).replace(/\s+/g, ' ') : ''; } catch (e) { title = ''; }
+    title = title || o.slug.replace(/-/g, ' ');
+    const stop = cmtLink(o.to), hi = o.who && o.who !== 'Anonymous' ? 'Hi ' + o.who + ',' : 'Hi,';
+    const text = [hi, '', 'I have replied to your comment on “' + title + '”.', '', 'You wrote:', quoteOf(o.said, 300), '', 'I replied:', quoteOf(o.reply, 1000), '', 'You can read it here: ' + SITE_ORIGIN + '/#blog/' + o.slug, '', 'Lauren', '',
+      '--', 'You are getting this one email because you ticked “Email me when Lauren replies” on your comment at laurenappl.com. I have now deleted your email address from that comment, so there will not be any more about it.',
+      'If you ticked it on other comments and would rather not hear about those either, you can stop them here: ' + stop, ''].join('\n');
+    const f = globalThis.__applMailFetch || fetch;
+    const r = await f('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: mailFrom(), to: [o.to], subject: ('I replied to your comment on “' + title + '”').slice(0, 200), text, headers: { 'List-Unsubscribe': '<' + stop + '>' } }) });
+    return !!(r && r.ok);
+  } catch (e) { return false; }
+}
+async function blogReply(store, body, now = Date.now()) {
+  const text = cleanBlock(body.text, 1000);
+  if (!text) return json(400, { error: 'empty' });
+  const can = mailReady();
+  const res = await update(store, 'data/blog.json', d => {
+    const b = blogData(d), r = b.posts[body.slug]; if (!r || !Array.isArray(r.c)) return { out: null };
+    const c = r.c.find(x => x && x.id === body.id); if (!c) return { out: null };
+    c.r = { t: text, at: now }; c.ok = true;
+    const wants = !!c.e, out = { to: '', wants, who: String(c.n || ''), said: String(c.t || '') };
+    if (wants && can) { out.to = c.e; delete c.e; c.m = 1; }                      // taken off the comment in the same save, so a second click cannot send it twice
+    return { next: b, out };
+  });
+  forgetBlog();
+  if (!res) return json(404, { error: 'gone' });
+  let mail = res.wants ? 'off' : 'none';                                          // 'off': they asked for an e-mail but sending is not set up yet
+  if (res.to) {
+    mail = (await sendReplyMail(store, { to: res.to, who: res.who, said: res.said, reply: text, slug: body.slug, now })) ? 'sent' : 'failed';
+    if (mail === 'failed') {
+      try { await update(store, 'data/blog.json', d => { const b = blogData(d), r = b.posts[body.slug], c = r && Array.isArray(r.c) && r.c.find(x => x && x.id === body.id); if (!c || !c.r) return null; c.e = res.to; delete c.m; return { next: b, out: 1 }; }); forgetBlog(); } catch (e) { /* the reply is saved; they can press it again */ }
+    }
+  }
+  return json(200, { ok: true, mail });
+}
+export async function cmtStop(store, u, t) {                                       // "stop these": every comment of theirs that still holds their address forgets it
+  const email = fromB64u(u).trim().toLowerCase(), sig = cmtSig(email);
+  if (!EMAIL_RE.test(email) || !sig || typeof t !== 'string' || !same(t, sig)) return json(400, { error: 'link' });
+  const n = await update(store, 'data/blog.json', d => {
+    const b = blogData(d); let k = 0;
+    Object.keys(b.posts).forEach(slug => { (Array.isArray(b.posts[slug] && b.posts[slug].c) ? b.posts[slug].c : []).forEach(c => { if (c && typeof c.e === 'string' && c.e.trim().toLowerCase() === email) { delete c.e; k++; } }); });
+    return k ? { next: b, out: k } : { out: 0 };
+  });
+  forgetBlog();
+  return json(200, { ok: true, removed: n | 0 });
+}
+export async function cmtStopPage(store, u, t) {                                   // opening the link only shows a button: a mail scanner opening it must not stop anything
+  const email = fromB64u(u).trim().toLowerCase(), sig = cmtSig(email);
+  const ok = EMAIL_RE.test(email) && !!sig && typeof t === 'string' && same(t, sig);
+  const inner = ok ? `<p class="s">For <b>${escH(email)}</b></p><p>Press the button and I will delete your email address from any comments you left on laurenappl.com, so I cannot email you about them.</p><p><button id="stop" type="button">Stop emails about my comments</button></p><p id="m" class="s" role="status"></p>`
+    : '<p>That link did not work. Please reply to my email and I will sort it out.</p>';
+  const page = `<!doctype html><html lang="en-GB"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Comment emails</title><style>body{font:17px/1.5 system-ui,sans-serif;background:#FBFAF6;color:#15171A;margin:0;padding:40px 20px;text-align:center}main{max-width:34rem;margin:0 auto}h1{font-weight:600}.s{color:#5D5E5A;overflow-wrap:anywhere}button{font:inherit;padding:.7rem 1.2rem;border:0;border-radius:8px;background:#15171A;color:#fff;cursor:pointer}button[disabled]{opacity:.5}a{color:#AC001C}</style></head><body><main><h1>Emails about my comments</h1>${inner}<p><a href="https://laurenappl.com/#blog">Back to the blog</a></p></main><script>
+var u=${JSON.stringify(String(u || '')).replace(/</g, '\\u003c')},tk=${JSON.stringify(String(t || '')).replace(/</g, '\\u003c')},b=document.getElementById('stop'),m=document.getElementById('m');
+if(b){b.onclick=function(){b.disabled=true;fetch('/api/notify',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({cstop:{u:u,t:tk}})}).then(function(r){if(r.ok){m.textContent='Done. Your email address has been deleted from your comments, so there will not be any more emails about them.';b.style.display='none'}else{b.disabled=false;m.textContent='That did not work. Please try again.'}}).catch(function(){b.disabled=false;m.textContent='That did not work. Please try again.'})}}
+</script></body></html>`;
+  return { status: 200, type: 'text/html; charset=utf-8', body: page, headers: { 'X-Robots-Tag': 'noindex, nofollow', 'Referrer-Policy': 'no-referrer', 'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'" } };
 }
 
 /* ---------- the owner page ---------- */
@@ -572,7 +644,7 @@ export async function adminPost(store, body) {
     const scores = (s.data && Array.isArray(s.data.rows) ? s.data.rows : []).filter(validRow).sort(byRank).map(r => { const secs = Number.isFinite(r.secs) ? r.secs : 0; return { ...pub(r), secs, by: r.by === 'owner' ? 'owner' : '', flawless: secs ? flawless(secs) : 0, look: !!(secs || r.score >= 150) && looksOff(r.score, secs) }; });
     const reports = (rp.data && Array.isArray(rp.data.list) ? rp.data.list : []).filter(r => r && Number.isFinite(r.at) && Array.isArray(r.ev));
     const bb = blogData(bl.data), comments = [], stats = [];
-    Object.keys(bb.posts).forEach(slug => { const r = bb.posts[slug] || {}; stats.push({ slug, v: r.v | 0, h: r.h | 0, t: r.t | 0 }); (Array.isArray(r.c) ? r.c : []).forEach(c => { if (c && typeof c.id === 'string') comments.push({ slug, id: c.id, n: String(c.n || ''), t: String(c.t || ''), at: c.at || 0, ok: !!c.ok }); }); });
+    Object.keys(bb.posts).forEach(slug => { const r = bb.posts[slug] || {}; stats.push({ slug, v: r.v | 0, h: r.h | 0, t: r.t | 0 }); (Array.isArray(r.c) ? r.c : []).forEach(c => { if (c && typeof c.id === 'string') comments.push({ slug, id: c.id, n: String(c.n || ''), t: String(c.t || ''), at: c.at || 0, ok: !!c.ok, r: c.r && typeof c.r.t === 'string' ? { t: c.r.t, at: Number(c.r.at) || 0 } : null, w: !!c.e, m: !!c.m }); }); });
     comments.sort((a, b) => (a.ok - b.ok) || b.at - a.at);
     return json(200, { subs, scores, reports, comments, stats, mailReady: mailReady(), blogTopics: BLOG_TOPICS, auto: { on: !(au.data && au.data.on === false), last: au.data && au.data.last || null } });
   }
@@ -633,6 +705,16 @@ export async function adminPost(store, body) {
     });
     forgetBlog();
     return json(200, { ok: true });
+  }
+  if (act === 'blogReply' && typeof body.slug === 'string' && typeof body.id === 'string') return blogReply(store, body);
+  if (act === 'blogUnreply' && typeof body.slug === 'string' && typeof body.id === 'string') {   // take a reply back down (nobody is e-mailed about that)
+    const had = await update(store, 'data/blog.json', d => {
+      const b = blogData(d), r = b.posts[body.slug]; if (!r || !Array.isArray(r.c)) return null;
+      const c = r.c.find(x => x && x.id === body.id); if (!c || !c.r) return null;
+      delete c.r; return { next: b, out: 1 };
+    });
+    forgetBlog();
+    return had ? json(200, { ok: true }) : json(404, { error: 'gone' });
   }
   if (act === 'clearReports') {
     await update(store, 'data/reports.json', d => (d && Array.isArray(d.list) && d.list.length) ? { next: { list: [] }, out: 1 } : null);
