@@ -456,6 +456,9 @@ html[data-bn="c"] .bn-t { margin-inline: auto; } html[data-bn="c"] .bn-s { margi
 .cl li { border-bottom: 1px solid var(--line); padding-bottom: 12px; display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 12px; align-items: start; } .cl p { margin: 4px 0 0; overflow-wrap: anywhere; }
 .av { display: block; width: 44px; height: 44px; border-radius: 50%; object-fit: cover; background: var(--panel); } .av.s { width: 28px; height: 28px; }
 .cl .cr { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 10px; align-items: start; }
+.cl li.pin { background: #FCF4F5; border: 1px solid #EBC7CC; border-radius: 10px; padding: 10px 10px 12px; }
+.cm-pin { color: #B52035; text-transform: uppercase; letter-spacing: .08em; font-size: .8em; }
+.cm-own { font-size: .7em; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; border: 1px solid var(--line2); border-radius: 99px; padding: 1px 7px; color: var(--muted); vertical-align: 1px; }
 .av-pick { border: 0; margin: 0; padding: 0; min-width: 0; display: grid; gap: 8px; } .av-pick legend { font-size: 13px; font-weight: 600; padding: 0; margin-bottom: 6px; }
 .av-row { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; }
 .av-opt { position: relative; display: block; cursor: pointer; } .av-opt[hidden] { display: none; }
@@ -2406,7 +2409,7 @@ html.work-dusk .hdr .hlogo { color: #EEEDEB; --sig: #E5334D; }   /* the letters 
   }
   function commentsHTML(r, slug) {
     var list = r.comments.map(function (c) {
-      return '<li><img class="av" src="' + esc(avSrc(c, slug)) + '" alt="" width="44" height="44" loading="lazy" decoding="async"><div><b>' + esc(c.n) + '</b> <small>' + esc(dnum(c.d || (c.at ? ldnDay(c.at) : ''))) + (c.pending ? ' · <i class="wait-chip">Waiting for approval</i>' : '') + '</small><p>' + esc(c.t).replace(/\n/g, '<br>') + '</p>' +
+      return '<li' + (c.p ? ' class="pin"' : '') + '><img class="av" src="' + esc(c.o ? 'favicon-192.png' : avSrc(c, slug)) + '" alt="" width="44" height="44" loading="lazy" decoding="async"><div>' + (c.p ? '<b class="cm-pin">Pinned</b> · ' : '') + '<b>' + esc(c.n) + '</b>' + (c.o ? ' <span class="cm-own">Author</span>' : '') + ' <small>' + esc(dnum(c.d || (c.at ? ldnDay(c.at) : ''))) + (c.pending ? ' · <i class="wait-chip">Waiting for approval</i>' : '') + '</small><p>' + esc(c.t).replace(/\n/g, '<br>') + '</p>' +
         (c.r && c.r.t ? '<div class="cr"><img class="av s" src="favicon-192.png" alt="" width="28" height="28" loading="lazy"><div><b>Lauren</b> <small>' + esc(dnum(c.r.at ? ldnDay(c.r.at) : '')) + '</small><p>' + esc(c.r.t).replace(/\n/g, '<br>') + '</p></div></div>' : '') + '</div></li>';
     }).join('');
     return list ? '<ul class="cl">' + list + '</ul>' : '<p class="muted small">No comments yet. Be the first.</p>';

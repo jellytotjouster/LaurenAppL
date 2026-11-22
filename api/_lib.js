@@ -477,7 +477,7 @@ const blogRec = (b, slug) => { const r = b.posts[slug] || (b.posts[slug] = { v: 
 const blogFull = (b, slug) => !b.posts[slug] && Object.keys(b.posts).length >= BLOG_MAX_POSTS;
 const blogPub = (r, withComments, extraViews = 0) => {
   const o = { v: (r ? r.v | 0 : 0) + extraViews, h: r ? r.h | 0 : 0, t: r ? r.t | 0 : 0 };
-  if (withComments) o.c = (r && Array.isArray(r.c) ? r.c : []).filter(c => c && c.ok).map(c => { const x = { id: c.id, n: c.n, t: c.t, at: c.at, a: avOf(c) }; if (c.r && typeof c.r.t === 'string' && c.r.t) x.r = { t: c.r.t, at: Number(c.r.at) || 0 }; return x; });
+  if (withComments) o.c = (r && Array.isArray(r.c) ? r.c : []).filter(c => c && c.ok).map(c => { const x = { id: c.id, n: c.n, t: c.t, at: c.at, a: avOf(c) }; if (c.o) x.o = 1; if (c.p) x.p = 1; if (c.r && typeof c.r.t === 'string' && c.r.t) x.r = { t: c.r.t, at: Number(c.r.at) || 0 }; return x; }).sort((a, b) => (b.p | 0) - (a.p | 0));   // pinned ones first, the rest in the order they came
   return o;
 };
 const applyViews = (b, take) => take.forEach((n, slug) => { if (!blogFull(b, slug)) blogRec(b, slug).v += n; });
@@ -675,7 +675,7 @@ export async function adminPost(store, body) {
     const scores = (s.data && Array.isArray(s.data.rows) ? s.data.rows : []).filter(validRow).sort(byRank).map(r => { const secs = Number.isFinite(r.secs) ? r.secs : 0; return { ...pub(r), secs, by: r.by === 'owner' ? 'owner' : '', flawless: secs ? flawless(secs) : 0, look: !!(secs || r.score >= 150) && looksOff(r.score, secs) }; });
     const reports = (rp.data && Array.isArray(rp.data.list) ? rp.data.list : []).filter(r => r && Number.isFinite(r.at) && Array.isArray(r.ev));
     const bb = blogData(bl.data), comments = [], stats = [];
-    Object.keys(bb.posts).forEach(slug => { const r = bb.posts[slug] || {}; stats.push({ slug, v: r.v | 0, h: r.h | 0, t: r.t | 0 }); (Array.isArray(r.c) ? r.c : []).forEach(c => { if (c && typeof c.id === 'string') comments.push({ slug, id: c.id, n: String(c.n || ''), t: String(c.t || ''), at: c.at || 0, ok: !!c.ok, a: avOf(c), r: c.r && typeof c.r.t === 'string' ? { t: c.r.t, at: Number(c.r.at) || 0 } : null, w: !!c.e, m: !!c.m }); }); });
+    Object.keys(bb.posts).forEach(slug => { const r = bb.posts[slug] || {}; stats.push({ slug, v: r.v | 0, h: r.h | 0, t: r.t | 0 }); (Array.isArray(r.c) ? r.c : []).forEach(c => { if (c && typeof c.id === 'string') comments.push({ slug, id: c.id, n: String(c.n || ''), t: String(c.t || ''), at: c.at || 0, ok: !!c.ok, a: avOf(c), o: !!c.o, p: !!c.p, r: c.r && typeof c.r.t === 'string' ? { t: c.r.t, at: Number(c.r.at) || 0 } : null, w: !!c.e, m: !!c.m }); }); });
     comments.sort((a, b) => (a.ok - b.ok) || b.at - a.at);
     return json(200, { subs, scores, reports, comments, stats, mailReady: mailReady(), blogTopics: BLOG_TOPICS, auto: { on: !(au.data && au.data.on === false), last: au.data && au.data.last || null } });
   }
@@ -738,6 +738,30 @@ export async function adminPost(store, body) {
     forgetBlog();
     if (gone === 'photo') await dropPhoto(store, body.id);
     return json(200, { ok: true });
+  }
+  if (act === 'blogOwnerComment' && typeof body.slug === 'string' && SLUG_RE.test(body.slug)) {   // the owner leaves a comment of her own on a post: it shows straight away (no approval), as "Lauren", and can be pinned to the top
+    const text = cleanBlock(body.text, 1000);
+    if (!text) return json(400, { error: 'empty' });
+    const now = Date.now(), id = crypto.randomBytes(6).toString('hex');
+    const res = await update(store, 'data/blog.json', d => {
+      const b = blogData(d); if (blogFull(b, body.slug)) return { out: 'full' };
+      const r = blogRec(b, body.slug); if (r.c.length >= BLOG_MAX_COMMENTS) return { out: 'full' };
+      const row = { id, n: 'Lauren', t: text, at: now, ok: true, a: AVATARS[0], o: 1 }; if (body.pin === true) row.p = 1;
+      r.c.push(row); countSave(b, now);
+      return { next: b, out: 'ok' };
+    });
+    forgetBlog();
+    return res === 'ok' ? json(200, { ok: true, id }) : json(503, { error: res || 'busy' });
+  }
+  if (act === 'blogPin' && typeof body.slug === 'string' && typeof body.id === 'string') {        // pin a comment to the top of its post, or let it go again
+    const had = await update(store, 'data/blog.json', d => {
+      const b = blogData(d), r = b.posts[body.slug]; if (!r || !Array.isArray(r.c)) return null;
+      const c = r.c.find(x => x && x.id === body.id); if (!c) return null;
+      if (body.on === true) c.p = 1; else delete c.p;
+      return { next: b, out: 1 };
+    });
+    forgetBlog();
+    return had ? json(200, { ok: true }) : json(404, { error: 'gone' });
   }
   if (act === 'blogReply' && typeof body.slug === 'string' && typeof body.id === 'string') return blogReply(store, body);
   if (act === 'blogPhoto' && typeof body.id === 'string' && ID_RE.test(body.id)) {              // so the owner can see a photo before approving it
