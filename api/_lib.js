@@ -440,12 +440,12 @@ export async function reportPost(store, body, ip, now = Date.now()) {
    The free plan allows 2,000 saves a month for the WHOLE store (scores and sign-ups too), and if that runs out the store is switched off for 30 days.
    So the blog is held to a small share of it, and it can never use more than that:
    - a hearts / thumbs up / comment save counts against a ceiling of 400 a month; past it the buttons say "resting" and nothing else on the site is affected;
-   - a view is only counted in memory, and written together with the next change or, at most, once every 3 hours, and never once 300 saves have been used;
-     (a few views can be lost if a server is switched off in between, which does not matter for a counter);
+   - a view is saved straight away (one save each, and a browser only ever sends one per post), and never once 300 saves have been used this month; past that, views stop being counted until next month.
+     (It used to be held in the server's memory for up to 3 hours, but the site runs on many short-lived servers that each have their own memory, so views were hidden from other servers or lost when one switched off.);
    - a read is remembered for a minute on a warm server, and one read serves a whole list of posts;
    - a comment is held until the owner approves it on the owner page, and the owner page is the only place that can approve or remove one. */
 const SLUG_RE = /^[a-z0-9][a-z0-9-]{0,59}$/;
-const BLOG_TTL = 60000, VIEW_FLUSH = 3 * 3600e3, BLOG_SAVES = 400, BLOG_VIEW_SAVES = 300;
+const BLOG_TTL = 60000, VIEW_FLUSH = 0, BLOG_SAVES = 400, BLOG_VIEW_SAVES = 300;
 const BLOG_MAX_POSTS = 500, BLOG_MAX_COMMENTS = 150, BLOG_MAX_PENDING_POST = 25, BLOG_MAX_PENDING = 100;
 /* A little profile picture beside a comment: one of Lauren's four characters (picked by the commenter, or by chance if they do not choose), or a small photo of their own.
    A photo is a 96-pixel JPEG made in their browser and kept in its own small file (data/av/<comment id>.json) so it never weighs down the comments file; it is only served once the comment is approved,
@@ -488,7 +488,7 @@ async function readBlog(store, now, fresh = false) {
   blog.data = blogData(data); blog.at = now;
   return blog.data;
 }
-async function flushViews(store, now) {                                // write the views counted in memory, but at most every 3 hours, and only while the blog is well inside its share
+async function flushViews(store, now) {                                // write the views counted in memory (straight away: VIEW_FLUSH is 0), and only while the blog is well inside its share
   if (!blog.pend.size || now - blog.lastFlush < VIEW_FLUSH) return;
   const take = blog.pend; blog.pend = new Map(); blog.lastFlush = now;
   try {
@@ -538,7 +538,7 @@ export async function blogPost(store, body, now = Date.now(), ip = '') {
   const slug = String(body.slug == null ? '' : body.slug), act = body.action;
   if (!SLUG_RE.test(slug)) return json(400, { error: 'slug' });
   if (act === 'view') {
-    if (!blogLimited(ip, 'view', 120, now)) blog.pend.set(slug, (blog.pend.get(slug) || 0) + 1);
+    if (!blogLimited(ip, 'view', 30, now)) blog.pend.set(slug, (blog.pend.get(slug) || 0) + 1);
     try { await flushViews(store, now); } catch (e) { /* kept in memory, tried again later */ }
     const d = await readBlog(store, now);
     return json(200, blogPub(d.posts[slug], true, blog.pend.get(slug) || 0));
